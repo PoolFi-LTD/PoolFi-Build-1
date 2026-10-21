@@ -2,7 +2,7 @@
 
 Backend for [PoolFi](https://thepoolfi.com), group money collection on Stellar. It has three parts: the pool contract, a Soroban smart contract that holds group contributions in USDC; the server, an HTTP API that gives every user a wallet and runs the contribution flow for them; and the web app in `web/` (see [web/README.md](web/README.md)).
 
-The design, states, roles and functions are described in [docs/contract-plan.md](docs/contract-plan.md).
+The design, states, roles and functions are described and stated in [docs/contract-plan.md](docs/contract-plan.md).
 
 ## Deployments
 

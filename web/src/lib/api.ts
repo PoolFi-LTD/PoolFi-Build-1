@@ -21,8 +21,8 @@ import type {
 export interface PoolFiApi {
   // Sign-in
   getSession(): Promise<User | null>;
-  /** Sends a 6-digit code by SMS or email. */
-  sendCode(to: { phone: string } | { email: string }): Promise<void>;
+  /** Emails a 6-digit sign-in code. */
+  sendCode(email: string): Promise<void>;
   /** Returns whether this is a new account that still needs a profile. */
   verifyCode(code: string): Promise<{ needsProfile: boolean }>;
   saveProfile(profile: { firstName: string; lastName: string; avatar: Avatar }): Promise<User>;

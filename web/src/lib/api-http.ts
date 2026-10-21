@@ -1,5 +1,5 @@
 /**
- * The real PoolFi API: sign-in with Supabase (a 6-digit code by email or SMS),
+ * The real PoolFi API: sign-in with Supabase (a 6-digit code by email),
  * everything else from the server at /api/v1/app, signed in with the Supabase session.
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -7,7 +7,7 @@ import type { PoolFiApi } from "./api";
 import { ApiError } from "./errors";
 import type { Receipt, User } from "./types";
 
-/** Where the code was sent, kept until it's checked (the verify screen can be reloaded). */
+/** The email the code was sent to, kept until it's checked (the verify screen can be reloaded). */
 const PENDING_KEY = "poolfi-signin-to";
 
 let supabaseClient: SupabaseClient | null = null;
@@ -24,27 +24,21 @@ function supabase(): SupabaseClient {
   return supabaseClient;
 }
 
-/** "+234 801 234 5678" → "+2348012345678", as SMS providers expect. */
-function e164(phone: string): string {
-  return `+${phone.replace(/\D/g, "")}`;
-}
+let pending: string | null = null;
 
-let pending: { phone: string } | { email: string } | null = null;
-
-function remember(to: { phone: string } | { email: string }) {
+function remember(email: string) {
   try {
-    sessionStorage.setItem(PENDING_KEY, JSON.stringify(to));
+    sessionStorage.setItem(PENDING_KEY, email);
   } catch {
     // Storage can be off; the code can still be checked in this tab.
   }
-  pending = to;
+  pending = email;
 }
 
-function pendingSignIn(): { phone: string } | { email: string } | null {
+function pendingEmail(): string | null {
   if (pending) return pending;
   try {
-    const saved = sessionStorage.getItem(PENDING_KEY);
-    return saved ? (JSON.parse(saved) as { phone: string } | { email: string }) : null;
+    return sessionStorage.getItem(PENDING_KEY);
   } catch {
     return null;
   }
@@ -59,11 +53,8 @@ function authError(error: { message: string; code?: string; status?: number }, c
   if (code === "validation_failed" || code === "email_address_invalid") {
     return new ApiError("invalid_address", "That doesn't look right. Check it and try again.");
   }
-  if (code === "over_email_send_rate_limit" || code === "over_sms_send_rate_limit" || error.status === 429) {
+  if (code === "over_email_send_rate_limit" || error.status === 429) {
     return new ApiError("too_many_codes", "Too many codes asked for. Wait a minute and try again.");
-  }
-  if (code === "phone_provider_disabled" || code === "sms_send_failed") {
-    return new ApiError("sms_unavailable", "Text messages aren't available yet. Sign in with your email instead.");
   }
   return new ApiError(code || "auth_failed", error.message || "Sign-in didn't work. Try again.");
 }
@@ -118,20 +109,17 @@ export const httpApi: PoolFiApi = {
     }
   },
 
-  async sendCode(to) {
-    const target = "phone" in to ? { phone: e164(to.phone) } : { email: to.email.trim().toLowerCase() };
-    const { error } = await supabase().auth.signInWithOtp({ ...target, options: { shouldCreateUser: true } });
+  async sendCode(email) {
+    const to = email.trim().toLowerCase();
+    const { error } = await supabase().auth.signInWithOtp({ email: to, options: { shouldCreateUser: true } });
     if (error) throw authError(error, false);
-    remember(target);
+    remember(to);
   },
 
   async verifyCode(code) {
-    const to = pendingSignIn();
-    if (!to) throw new ApiError("code_expired", "Ask for a new code.");
-    const { error } =
-      "phone" in to
-        ? await supabase().auth.verifyOtp({ phone: to.phone, token: code, type: "sms" })
-        : await supabase().auth.verifyOtp({ email: to.email, token: code, type: "email" });
+    const email = pendingEmail();
+    if (!email) throw new ApiError("code_expired", "Ask for a new code.");
+    const { error } = await supabase().auth.verifyOtp({ email, token: code, type: "email" });
     if (error) throw authError(error, true);
     try {
       sessionStorage.removeItem(PENDING_KEY);

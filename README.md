@@ -200,7 +200,7 @@ The screens in `web/` use `/v1/app`, shaped as `server/src/api-types.ts` describ
 
 ### Emails
 
-With `RESEND_API_KEY` set, the server emails people (through Resend) when something happens in their pools. Only people with an email address get one; phone sign-ins don't. A failed email is logged and never stops a payment or payout.
+With `RESEND_API_KEY` set, the server emails people (through Resend) when something happens in their pools. Everyone signs in with their email, so everyone can get them; reminders go to people on a pool's list whose contact is an email address. A failed email is logged and never stops a payment or payout.
 
 | When | Who | Email |
 |---|---|---|
@@ -253,7 +253,7 @@ One Vercel project serves the web app and the API: `web/src/app/api/[...path]/ro
 ### 1. Supabase
 
 - **Database.** Project Settings → Database → Connect → **Session pooler** (port 5432). That's `DATABASE_URL`, with `?sslmode=require&uselibpqcompat=true` added so the connection is encrypted. Not the transaction pooler (port 6543): the server uses session locks. Not the direct connection either: it's IPv6-only, and Vercel can't reach it.
-- **Email codes, sent through Resend.** Authentication → Sign In / Providers → Email on. Authentication → Emails → **SMTP Settings** → enable custom SMTP: host `smtp.resend.com`, port `465`, username `resend`, password your Resend API key, sender email an address on your Resend-verified domain (e.g. `noreply@thepoolfi.com`), sender name `PoolFi`. Then Authentication → Emails → Templates: paste [docs/supabase-sign-in-email.html](docs/supabase-sign-in-email.html) into both **Confirm signup** (new accounts) and **Magic Link** (returning ones), with the subject `Your PoolFi code is {{ .Token }}`. The app asks for the 6 digits, so the email must show `{{ .Token }}` rather than a link. With custom SMTP, raise the email limit under Authentication → Rate Limits (it starts at 30 an hour). Phone codes also need an SMS provider under Phone; until then set `NEXT_PUBLIC_SIGNIN_METHODS=email`.
+- **Email codes, sent through Resend.** Authentication → Sign In / Providers → Email on, with **Email OTP Expiration** `600` (codes last 10 minutes; Supabase starts at an hour). The app's code boxes follow `NEXT_PUBLIC_SIGNIN_CODE_LENGTH` (default 6), which must equal **Email OTP Length**. Only the organisation's Owner or an Administrator can change these settings. Authentication → Emails → **SMTP Settings** → enable custom SMTP: host `smtp.resend.com`, port `465`, username `resend`, password your Resend API key, sender email an address on your Resend-verified domain (e.g. `noreply@thepoolfi.com`), sender name `PoolFi`. Then Authentication → Emails → Templates: paste [docs/supabase-sign-in-email.html](docs/supabase-sign-in-email.html) into both **Confirm sign up** (new accounts) and **Magic link or OTP** (returning ones), with the subject `Your PoolFi code is {{ .Token }}`. The app asks for the 6 digits, so the email must show `{{ .Token }}` rather than a link. With custom SMTP, raise the email limit under Authentication → Rate Limits (it starts at 30 an hour). Sign-in is by email only.
 - **Site URL.** Authentication → URL Configuration → your domain.
 - **Keys.** Project Settings → API: the project URL and the anon (publishable) key, for the web app. To check sign-ins, the server needs `AUTH_JWKS_URL=https://<project>.supabase.co/auth/v1/.well-known/jwks.json` (projects on JWT signing keys, the default for new ones), or the project's legacy JWT secret as `AUTH_JWT_SECRET`. Either way set `AUTH_JWT_ISSUER=https://<project>.supabase.co/auth/v1` and `AUTH_JWT_AUDIENCE=authenticated`.
 
@@ -288,8 +288,8 @@ Migration `004_lock_tables.sql` closes PoolFi's tables to Supabase's public Data
 | `CRON_SECRET` | A long random string (`openssl rand -hex 32`) |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Your Resend key, and the sender on your Resend-verified domain, e.g. `PoolFi <noreply@thepoolfi.com>`. Optional: `EMAIL_REPLY_TO`, and `EMAIL_TIME_ZONE` (default `Africa/Lagos`) |
 | `APP_URL` | Optional: the site's address for links in reminders, e.g. `https://thepoolfi.com` (defaults to the Vercel production domain) |
+| `NEXT_PUBLIC_SIGNIN_CODE_LENGTH` | Supabase's **Email OTP Length** (`6` to `10`) |
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | From Supabase. Setting these switches the app from sample data to the real backend |
-| `NEXT_PUBLIC_SIGNIN_METHODS` | `email` until SMS is set up |
 
 `NEXT_PUBLIC_` values are built into the page, so redeploy after changing them.
 

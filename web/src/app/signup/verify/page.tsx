@@ -7,6 +7,7 @@ import { useSession } from "@/components/providers";
 import { AuthShell } from "@/components/shells";
 import { ErrorText, ProgressBar, Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
+import { CODE_LENGTH } from "@/lib/signin";
 import { haptic, sound } from "@/lib/sound";
 import s from "../auth.module.css";
 
@@ -18,7 +19,7 @@ function Verify() {
   const to = params.get("to") ?? "";
   const next = params.get("next");
   const { refresh } = useSession();
-  const [digits, setDigits] = useState<string[]>(Array(6).fill(""));
+  const [digits, setDigits] = useState<string[]>(Array(CODE_LENGTH).fill(""));
   const [state, setState] = useState<"idle" | "checking" | "verified" | "wrong">("idle");
   const [error, setError] = useState<unknown>(null);
   const [left, setLeft] = useState(RESEND_SECONDS);
@@ -46,7 +47,7 @@ function Verify() {
       setState("wrong");
       sound.nope();
       haptic([30, 30, 30]);
-      setDigits(Array(6).fill(""));
+      setDigits(Array(CODE_LENGTH).fill(""));
       boxes.current[0]?.focus();
     }
   }
@@ -57,11 +58,11 @@ function Verify() {
     const nextDigits = [...digits];
     // Typing or pasting several digits fills the following boxes too.
     typed.split("").forEach((d, k) => {
-      if (index + k < 6) nextDigits[index + k] = d;
+      if (index + k < CODE_LENGTH) nextDigits[index + k] = d;
     });
     setDigits(nextDigits);
     if (state === "wrong") setState("idle");
-    const filled = Math.min(5, index + typed.length);
+    const filled = Math.min(CODE_LENGTH - 1, index + typed.length);
     boxes.current[filled]?.focus();
     if (nextDigits.every(Boolean)) void check(nextDigits.join(""));
   }
@@ -76,8 +77,7 @@ function Verify() {
   }
 
   async function resend() {
-    const isEmail = to.includes("@");
-    await api.sendCode(isEmail ? { email: to } : { phone: to }).catch(setError);
+    await api.sendCode(to).catch(setError);
     setLeft(RESEND_SECONDS);
   }
 
@@ -90,7 +90,7 @@ function Verify() {
           </button>
           <ProgressBar value={0.5} />
         </div>
-        <h1 className={s.title}>Enter the 6-digit code</h1>
+        <h1 className={s.title}>Enter the {CODE_LENGTH}-digit code</h1>
         <p className={s.sub} style={{ marginBottom: 0 }}>
           Sent to <span style={{ color: "var(--ink)" }}>{to}</span>{" "}
           <button type="button" className={s.link} onClick={() => router.back()}>

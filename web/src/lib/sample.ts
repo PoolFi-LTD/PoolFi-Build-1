@@ -9,6 +9,7 @@
 import type { PoolFiApi } from "./api";
 import { ApiError } from "./errors";
 import { feeOf, fromNaira, grossShare, roundUsdc } from "./money";
+import { CODE_LENGTH } from "./signin";
 import type {
   ActivityItem,
   Approver,
@@ -500,29 +501,28 @@ export const sampleApi: PoolFiApi = {
       return s.session ? s.users[s.session] : null;
     }, 60),
 
-  sendCode: (to) =>
+  sendCode: (email) =>
     respond(() => {
       const s = load();
-      const value = "phone" in to ? to.phone : to.email;
-      const existing = Object.values(s.users).some((u) => u.phone === value || u.email === value);
+      const value = email.trim().toLowerCase();
+      const existing = Object.values(s.users).some((u) => u.email === value);
       s.pending = { to: value, existing };
     }, 500),
 
   verifyCode: (code) =>
     respond(() => {
       const s = load();
-      if (!/^\d{6}$/.test(code)) throw new ApiError("invalid_code", "That code isn't right. Check it and try again.");
+      if (!new RegExp(`^\\d{${CODE_LENGTH}}$`).test(code)) throw new ApiError("invalid_code", "That code isn't right. Check it and try again.");
       const pending = s.pending;
       if (!pending) throw new ApiError("code_expired", "Ask for a new code.");
-      const existing = Object.values(s.users).find((u) => u.phone === pending.to || u.email === pending.to);
+      const existing = Object.values(s.users).find((u) => u.email === pending.to);
       s.pending = null;
       if (existing) {
         s.session = existing.id;
         return { needsProfile: false };
       }
       const id = `user${s.nextId++}`;
-      const isEmail = pending.to.includes("@");
-      s.users[id] = { ...user(id, "", ""), email: isEmail ? pending.to : null, phone: isEmail ? null : pending.to };
+      s.users[id] = { ...user(id, "", ""), email: pending.to, phone: null };
       s.session = id;
       return { needsProfile: true };
     }, 600),

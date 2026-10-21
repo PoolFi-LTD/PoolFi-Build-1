@@ -15,3 +15,6 @@ AGENTS.md
 server/node_modules
 server/.env
 server/.local
+
+# Settings to hand over for Vercel (they hold secrets)
+.env.vercel

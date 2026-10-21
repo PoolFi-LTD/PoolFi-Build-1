@@ -7,15 +7,13 @@
 .bubble { flex: 1; padding: 12px 14px; border: 2px solid var(--line-soft); border-radius: 16px; font-size: 14px; }
 .title { font-family: var(--font-display); font-weight: 700; font-size: 26px; line-height: 1.2; letter-spacing: -0.5px; }
 .sub { margin: 14px 0 22px; color: var(--slate); }
-.phoneRow { display: flex; gap: 8px; align-items: flex-end; }
-.country { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 56px; padding: 0 14px; border: 2px solid var(--line); border-radius: 14px; background: var(--white); font-family: var(--font-display); font-weight: 500; }
 .link { padding: 0; border: 0; background: none; color: var(--blue); font-family: var(--font-display); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .terms { margin-top: 18px; color: var(--slate); font-size: 12px; }
 .footer { margin-top: auto; padding-top: 24px; }
 
 /* 6-digit code */
 .boxes { display: flex; gap: 8px; margin: 22px 0 14px; }
-.box { width: 52px; height: 58px; border: 2px solid var(--line); border-radius: 14px; background: var(--white); text-align: center; font-family: var(--font-display); font-weight: 700; font-size: 24px; color: var(--ink); outline: none; transition: border-color 150ms ease, background 200ms ease; }
+.box { flex: 1; max-width: 52px; min-width: 0; height: 58px; border: 2px solid var(--line); border-radius: 14px; background: var(--white); text-align: center; font-family: var(--font-display); font-weight: 700; font-size: 24px; color: var(--ink); outline: none; transition: border-color 150ms ease, background 200ms ease; }
 .box:focus { border-color: var(--blue); }
 .filled { border-color: var(--blue-200); }
 /* Right code: the boxes turn green and the row swells once. Wrong: the row shakes. */

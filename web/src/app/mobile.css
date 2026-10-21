@@ -6,6 +6,8 @@
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .grid-side { display: grid; grid-template-columns: 334px 1fr; gap: 24px; align-items: start; }
 .w-540 { width: min(540px, 100%); }
+/* Grid items may shrink below their text, so long names cut off with "…" instead of widening the page */
+.grid-cards > *, .grid-side > *, .grid-4 > *, .grid-3 > * { min-width: 0; }
 
 /* Things that only show on one size */
 @media (min-width: 900px) {
@@ -59,6 +61,11 @@
   .cele-v { font-size: 44px; }
   .cele-foot { padding: 12px 20px calc(30px + env(safe-area-inset-bottom, 0px)); }
   .ach { width: 100%; }
+
+  /* "You're in!" fits a phone: smaller headline, lines that wrap */
+  .paid-col { width: min(342px, 100%) !important; gap: 12px !important; }
+  .paid-col h1 { font-size: 56px !important; }
+  .paid-col p { white-space: normal !important; }
 
   /* A button pinned to the bottom of a pushed screen */
   .phone-foot { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: flex; gap: 10px; padding: 12px 20px calc(28px + env(safe-area-inset-bottom, 0px)); background: var(--white); }

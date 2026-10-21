@@ -1,6 +1,6 @@
 # PoolFi web app
 
-The PoolFi web app, built from the desktop design (the Figma exports) and the prototype. Next.js 16 (App Router), React 19, TypeScript, CSS Modules.
+The PoolFi web app, built from the Figma designs (desktop and mobile) and the prototype. Next.js 16 (App Router), React 19, TypeScript, CSS Modules.
 
 It currently runs on **sample data** stored in your browser, so every screen can be reviewed before it is connected to the server and the contract.
 
@@ -70,6 +70,19 @@ web/src
     └── format.ts, hooks.ts, errors.ts
 ```
 
+## Phone layout
+
+Below 900px wide the same pages switch to the Figma mobile design. It's one app, not a separate site.
+
+- **Navigation:** a floating tab bar (Home, Pools, the + for creating a pool, Wallet, Me) replaces the sidebar on the main pages (Home, Pools, Wallet, Settings, Activity, Notifications). Other screens get a back chevron and a 22px title.
+- **Sheets:** modals become bottom sheets that rise from the bottom; toasts drop in from the top.
+- **Pinned buttons:** a screen's main button pins to the bottom, for example Remind (with a square Add divers button beside it), Request payout, Continue, and Pay on the invite.
+- **Welcome:** the blue story panel becomes the whole welcome screen, with dots for the three story lines.
+- **Invite:** the blue panel becomes a hero on top, with the share card overlapping it.
+- **Pool page:** shows the time left in the stats row and a share icon in the header.
+
+Rules: `src/app/mobile.css` for shared pieces (the `hide-m` and `hide-d` helpers, sheets, grids) and a `@media (max-width: 899px)` block in each page's module.
+
 ## Animations
 
 All motion comes from the prototype, with the same keyframes, timings and easing.
@@ -81,6 +94,7 @@ All motion comes from the prototype, with the same keyframes, timings and easing
 | Opening the app | Splash: the pool fills and the logo springs in, each time the app opens or reloads; tap to skip |
 | Sign-up panel | Coins bob around Drip, the story changes every few seconds, waves drift |
 | Everywhere | Pages slide or fade in, buttons ripple, rows rise in turn, modals and toasts spring in and out, Drip bobs and blinks |
+| Phones | The chosen tab's icon lifts and a soft highlight springs up behind it, the + presses down, sheets rise from the bottom, toasts drop from the top |
 | Home and wallet | Balance counts up, waves drift behind it, alerts pulse, the bell rings while something needs you |
 | Pool page | The tank fills and counts up. A coin drops in for each payment since your last visit, or one that lands while you watch, and those rows slide in highlighted. A refunded pool drains |
 | Pool fills up | Lifeguard's "is full." celebration, once |
@@ -148,4 +162,4 @@ No screen needs to change. The interface and `types.ts` are the contract between
 - **Stellar, not Base.** Wallet text and addresses are Stellar.
 - **Amount keypad.** The "00" key is a "." key, because USDC has cents.
 - **Sign-in codes.** Sign-in is by phone or email code. Email (through Supabase) comes first once connected.
-- **Desktop only for now.** The mobile design comes next.
+- **Phones** get the mobile design. See "Phone layout" below.

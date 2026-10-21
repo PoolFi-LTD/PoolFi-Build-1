@@ -1,5 +1,5 @@
 /* Pool row */
-.poolRow { display: block; padding: 18px; border-radius: 20px; background: var(--white); color: inherit; transition: box-shadow 150ms ease, transform 100ms var(--ease-out); }
+.poolRow { display: block; min-width: 0; padding: 18px; border-radius: 20px; background: var(--white); color: inherit; transition: box-shadow 150ms ease, transform 100ms var(--ease-out); }
 .poolRow:hover { box-shadow: var(--shadow-raised); }
 .poolRow:active { transform: scale(0.99); }
 .poolTop { display: flex; align-items: center; gap: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--line-soft); }

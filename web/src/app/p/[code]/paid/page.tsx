@@ -58,7 +58,7 @@ function Paid() {
       <Sea height={120} wave={90} lift={24} frontOpacity={0.9} style={{ zIndex: -1 }} />
       <Loaded resource={receipt}>
         {(r) => (
-          <div style={{ position: "relative", display: "grid", justifyItems: "center", gap: 14, width: "min(300px, 100%)" }}>
+          <div className="paid-col" style={{ position: "relative", display: "grid", justifyItems: "center", gap: 14, width: "min(300px, 100%)" }}>
             {/* Rings spread out while the tick draws itself. */}
             <span className="ripw" style={{ "--ripw": "150px", display: "grid", placeItems: "center" } as React.CSSProperties}>
               <span className="ring" />

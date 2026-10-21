@@ -156,7 +156,7 @@
   .tabOn svg { transform: translateY(-2px) scale(1.12); }
   /* A soft blob springs up behind the chosen tab */
   .tabOn::before { content: ""; position: absolute; top: 8px; z-index: -1; width: 42px; height: 32px; border-radius: 12px; background: var(--blue-50); animation: tabBlob 420ms var(--ease-splash); }
-  .fab { display: grid; place-items: center; justify-self: center; width: 60px; height: 60px; margin-top: -12px; border-radius: 999px; background: var(--blue); color: var(--white); box-shadow: 0 4px 0 var(--blue-edge), 0 12px 22px -8px rgba(27, 79, 216, 0.7); transition: transform 100ms var(--ease-out), box-shadow 100ms; }
+  .fab { display: grid; place-items: center; justify-self: center; width: 60px; height: 60px; border-radius: 999px; background: var(--blue); color: var(--white); box-shadow: 0 4px 0 var(--blue-edge), 0 12px 22px -8px rgba(27, 79, 216, 0.7); transition: transform 100ms var(--ease-out), box-shadow 100ms; }
   .fab:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--blue-edge); }
   .fab svg { width: 28px; height: 28px; }
 

@@ -13,7 +13,12 @@ async function token(claims: Record<string, unknown>, options: { secret?: string
 describe("createAuthenticator", () => {
   it("returns the signed-in user", async () => {
     const jwt = await token({ sub: "user-1", email: "ada@example.com", aud: "authenticated" });
-    await expect(authenticate(`Bearer ${jwt}`)).resolves.toEqual({ id: "user-1", email: "ada@example.com" });
+    await expect(authenticate(`Bearer ${jwt}`)).resolves.toEqual({ id: "user-1", email: "ada@example.com", phone: null });
+  });
+
+  it("reads a phone sign-in as E.164", async () => {
+    const jwt = await token({ sub: "user-2", email: "", phone: "2348035550142", aud: "authenticated" });
+    await expect(authenticate(`Bearer ${jwt}`)).resolves.toEqual({ id: "user-2", email: null, phone: "+2348035550142" });
   });
 
   it("rejects a missing or malformed header", async () => {

@@ -52,17 +52,21 @@ create index pool_approvers_user_id_idx on pool_approvers (user_id);
 -- `user_id` is set once the person pays as themselves.
 create table pool_divers (
   id uuid primary key default gen_random_uuid(),
+  -- The order people were added in, for the member list.
+  seq bigint generated always as identity,
   pool_id uuid not null references pools (id),
   name text not null,
   -- Phone or email; only the lifeguard sees it.
   contact text,
   user_id text references users (id),
   on_list boolean not null default true,
+  -- Set while a payment for this person is going through, so no one else pays as them meanwhile.
+  paying_at timestamptz,
   last_reminded_at timestamptz,
   created_at timestamptz not null default now()
 );
 
-create index pool_divers_pool_id_idx on pool_divers (pool_id);
+create index pool_divers_pool_id_idx on pool_divers (pool_id, seq);
 create unique index pool_divers_pool_user_idx on pool_divers (pool_id, user_id) where user_id is not null;
 create index pool_divers_user_id_idx on pool_divers (user_id) where user_id is not null;
 
@@ -70,6 +74,9 @@ create index pool_divers_user_id_idx on pool_divers (user_id) where user_id is n
 alter table contributions
   add column diver_id uuid references pool_divers (id),
   add column receipt_ref text unique;
+
+-- Each diver pays once.
+create unique index contributions_diver_id_idx on contributions (diver_id) where diver_id is not null;
 
 -- A lifeguard's request for the payout. With approvers it waits for their votes;
 -- without, it's paid straight away. A declined request ends; the next one is a new row.
@@ -117,7 +124,8 @@ create table activity (
   amount numeric(39, 0),
   -- Extra facts, e.g. {"count": 19} for a reminder or {"vote": "declined"} for an approval.
   data jsonb not null default '{}',
-  at timestamptz not null default now()
+  -- The real time, not the transaction's, so two things in one transaction keep their order.
+  at timestamptz not null default clock_timestamp()
 );
 
 create index activity_pool_id_at_idx on activity (pool_id, at desc);

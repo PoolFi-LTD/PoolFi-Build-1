@@ -72,9 +72,25 @@ describe("toApiError", () => {
     }
   });
 
+  it("maps the payout approval errors added in the second release", () => {
+    const expected = [
+      "approval_required",
+      "no_approvers",
+      "invalid_approvers",
+      "not_approver",
+      "payout_already_requested",
+      "no_payout_request",
+      "already_approved",
+      "payout_pending",
+      "invalid_fee",
+    ];
+    const codes = expected.map((_, i) => apiError(contractFailure([contractError(POOL, 110 + i)], "")).code);
+    expect(codes).toEqual(expected);
+  });
+
   it("doesn't guess when it can't tell which contract failed", () => {
     expect(apiError(contractFailure(undefined, "HostError: Error(Contract, #105)")).code).toBe("transaction_failed");
-    for (const unknown of [0, 11, 99, 110]) {
+    for (const unknown of [0, 11, 99, 119]) {
       expect(apiError(contractFailure([contractError(POOL, unknown)], "")).code).toBe("transaction_failed");
     }
   });

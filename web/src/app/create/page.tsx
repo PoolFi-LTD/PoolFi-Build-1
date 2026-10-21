@@ -19,7 +19,6 @@ import { sound } from "@/lib/sound";
 import type { PoolDetail, PoolType } from "@/lib/types";
 import s from "./create.module.css";
 
-const FEE_BPS = Number(process.env.NEXT_PUBLIC_FEE_BPS ?? 500);
 const STEPS = 8;
 const MAX_APPROVERS = 3;
 /** The design's ₦100 minimum and quick amounts, in USDC. */
@@ -168,6 +167,8 @@ function Create() {
   const toast = useToast();
   const now = useNow();
   const contacts = useResource(() => api.listContacts(), []);
+  // The contract's fee, so the preview matches what the pool will charge.
+  const feeBps = useResource(() => api.getFeeBps(), []).data ?? 0;
   const create = useAction(api.createPool);
   const [step, setStepNow] = useState(0);
   // Steps slide in from the side you're heading to.
@@ -201,9 +202,9 @@ function Create() {
   const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }));
 
   const amount = roundUsdc(Number(d.amountText || 0));
-  const share = grossShare(amount, FEE_BPS, d.feeCovered);
+  const share = grossShare(amount, feeBps, d.feeCovered);
   const goal = roundUsdc(share * d.count);
-  const receive = roundUsdc(goal - feeOf(goal, FEE_BPS));
+  const receive = roundUsdc(goal - feeOf(goal, feeBps));
   const type = TYPES[Math.max(0, d.typeIndex)];
   const people = usable(d.members);
   const approverNames = useMemo(
@@ -372,13 +373,16 @@ function Create() {
           </button>
         ))}
       </div>
-      <FeeTip on={d.feeCovered} onChange={(on) => set({ feeCovered: on })}>
-        {amount
-          ? d.feeCovered
-            ? `Each diver pays ${formatUsdc(share)}: ${formatUsdc(amount)} plus ${formatUsdc(roundUsdc(share - amount))} towards the fee. You still receive the full ${formatUsdc(amount)} per person.`
-            : `Each diver pays ${formatUsdc(amount)}. After PoolFi's ${FEE_BPS / 100}%, you receive ${formatUsdc(roundUsdc(amount - feeOf(amount, FEE_BPS)))} per person.`
-          : `Turn this on and each share includes the fee, so you receive the full amount.`}
-      </FeeTip>
+      {/* No fee to cover on a contract without one. */}
+      {feeBps > 0 && (
+        <FeeTip feeBps={feeBps} on={d.feeCovered} onChange={(on) => set({ feeCovered: on })}>
+          {amount
+            ? d.feeCovered
+              ? `Each diver pays ${formatUsdc(share)}: ${formatUsdc(amount)} plus ${formatUsdc(roundUsdc(share - amount))} towards the fee. You still receive the full ${formatUsdc(amount)} per person.`
+              : `Each diver pays ${formatUsdc(amount)}. After PoolFi's ${feeBps / 100}%, you receive ${formatUsdc(roundUsdc(amount - feeOf(amount, feeBps)))} per person.`
+            : `Turn this on and each share includes the fee, so you receive the full amount.`}
+        </FeeTip>
+      )}
       <div className={s.keypad}>
         {["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "del"].map((k) => (
           <button key={k} type="button" className={s.key} onClick={() => key(k)} aria-label={k === "del" ? "Delete" : k}>

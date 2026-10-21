@@ -9,6 +9,7 @@ import pg from "pg";
 import { buildApp } from "../../src/app.ts";
 import { loadConfig, type Config } from "../../src/config.ts";
 import { Db } from "../../src/db.ts";
+import type { Email, Mailer } from "../../src/email/mailer.ts";
 import { migrate } from "../../src/migrate.ts";
 import { parseUsdc } from "../../src/money.ts";
 import { Chain } from "../../src/stellar/chain.ts";
@@ -49,7 +50,10 @@ export async function startHarness() {
   const db = new Db(config.databaseUrl);
   await migrate(db);
   const chain = new Chain(config.stellar, (key, fn) => db.withLock(key, fn));
-  const { app, services } = await buildApp({ config, db, chain });
+  // Emails are caught here, never sent, whatever server/.env says.
+  const emails: Email[] = [];
+  const mailer: Mailer = { send: async (batch) => void emails.push(...batch) };
+  const { app, services } = await buildApp({ config, db, chain, mailer });
 
   /** A signed-in user, as the auth provider would issue them. */
   async function signIn(name: string): Promise<TestUser> {
@@ -74,7 +78,7 @@ export async function startHarness() {
     await adminQuery(base.databaseUrl, `drop database if exists ${database}`);
   }
 
-  return { config, db, chain, contract: new PoolContract(chain), services, signIn, call, close };
+  return { config, db, chain, app, emails, contract: new PoolContract(chain), services, signIn, call, close };
 }
 
 export type Harness = Awaited<ReturnType<typeof startHarness>>;

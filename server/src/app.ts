@@ -1,11 +1,14 @@
 import cors from "@fastify/cors";
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
+import { appRoutes } from "./app-routes.ts";
 import { createAuthenticator, type AuthUser } from "./auth.ts";
 import type { Config } from "./config.ts";
 import type { Db } from "./db.ts";
+import type { Mailer } from "./email/mailer.ts";
 import { ApiError } from "./errors.ts";
 import { formatUsdc, isUsdcAmount, parseUsdc } from "./money.ts";
+import { parse } from "./parse.ts";
 import { createServices, type Services } from "./services/index.ts";
 import { ContributeInput, CreatePoolInput, JoinPoolInput } from "./services/pools.ts";
 import type { Chain } from "./stellar/chain.ts";
@@ -14,21 +17,15 @@ export interface AppDeps {
   config: Config;
   db: Db;
   chain: Chain;
+  /** Where emails go; Resend from the config unless given (tests catch them instead). */
+  mailer?: Mailer;
 }
 
 const DepositInput = z.object({
   amount: z.string().refine(isUsdcAmount, "must be a USDC amount, e.g. 50 or 12.5"),
 });
 
-function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
-  const result = schema.safeParse(value ?? {});
-  if (!result.success) {
-    throw new ApiError(400, "invalid_request", "Some of the request is missing or invalid.", z.flattenError(result.error));
-  }
-  return result.data;
-}
-
-export async function buildApp({ config, db, chain }: AppDeps): Promise<{ app: FastifyInstance; services: Services }> {
+export async function buildApp({ config, db, chain, mailer }: AppDeps): Promise<{ app: FastifyInstance; services: Services }> {
   const app = Fastify({
     logger: { level: config.logLevel, redact: ["req.headers.authorization"] },
     bodyLimit: 64 * 1024,
@@ -36,7 +33,7 @@ export async function buildApp({ config, db, chain }: AppDeps): Promise<{ app: F
   await app.register(cors, { origin: config.corsOrigins.length > 0 ? config.corsOrigins : false });
 
   const authenticate = createAuthenticator(config.auth);
-  const services = createServices({ config, db, chain }, app.log);
+  const services = createServices({ config, db, chain, mailer }, app.log);
   const { wallets, deposits, pools } = services;
 
   const signedIn = (request: FastifyRequest): Promise<AuthUser> => authenticate(request.headers.authorization);
@@ -116,6 +113,8 @@ export async function buildApp({ config, db, chain }: AppDeps): Promise<{ app: F
   app.post<{ Params: { poolId: string } }>("/v1/pools/:poolId/withdraw", async (request) => {
     return pools.withdraw(await signedIn(request), request.params.poolId);
   });
+
+  await app.register(appRoutes(services.app, signedIn, config), { prefix: "/v1/app" });
 
   return { app, services };
 }

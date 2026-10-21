@@ -1,4 +1,5 @@
 import type { Db } from "../db.ts";
+import type { Notifications } from "./app/notifications.ts";
 import { ApiError } from "../errors.ts";
 import { formatUsdc } from "../money.ts";
 import type { Chain } from "../stellar/chain.ts";
@@ -38,6 +39,7 @@ export class RefundJob {
     private readonly wallets: Wallets,
     private readonly concurrency: number,
     private readonly log: Logger,
+    private readonly notify?: Notifications,
   ) {
     this.contracts = { pool: chain.poolContractId, usdc: chain.usdcContractId };
   }
@@ -78,11 +80,24 @@ export class RefundJob {
       this.refundMember(poolId, chainPoolId, address),
     );
     const failures = outcomes.filter((o) => o === "failed").length;
-    if (failures === 0) await this.finish(poolId);
-    return { refunds: outcomes.filter((o) => o === "refunded").length, failures, finished: failures === 0 };
+    if (failures === 0) {
+      await this.noteRefunded(poolId);
+      await this.finish(poolId);
+    }
+    const refunded = outcomes.flatMap((o) => (typeof o === "object" ? [o] : []));
+    await this.notify?.refunded(
+      poolId,
+      refunded.flatMap((r) => (r.userId ? [{ userId: r.userId, amount: r.amount }] : [])),
+    );
+    return { refunds: refunded.length, failures, finished: failures === 0 };
   }
 
-  private async refundMember(poolId: string, chainPoolId: bigint, address: string) {
+  /** "nothing" or "failed", or who was refunded and how much. */
+  private async refundMember(
+    poolId: string,
+    chainPoolId: bigint,
+    address: string,
+  ): Promise<"nothing" | "failed" | { userId: string | null; amount: bigint }> {
     try {
       const member = await this.contract.getMember(chainPoolId, address);
       if (!member || member.refunded || member.contributed === 0n) return "nothing";
@@ -97,7 +112,7 @@ export class RefundJob {
         [poolId, address, owner, amount.toString(), txHash],
       );
       this.log.info({ poolId, address, amount: formatUsdc(amount), txHash }, "refunded contributor");
-      return "refunded";
+      return { userId: owner, amount };
     } catch (error) {
       const mapped = toApiError(error, this.contracts);
       // Someone else refunded them first.
@@ -105,6 +120,16 @@ export class RefundJob {
       this.log.warn({ poolId, address, error: String(error) }, "refund failed; it will be retried");
       return "failed";
     }
+  }
+
+  /** One line in the pool's activity once everyone is refunded. */
+  private async noteRefunded(poolId: string) {
+    await this.db.query(
+      `insert into activity (pool_id, kind, amount)
+       select $1::uuid, 'refund', sum(amount) from refunds where pool_id = $1::uuid having sum(amount) > 0
+         and not exists (select 1 from activity where pool_id = $1::uuid and kind = 'refund')`,
+      [poolId],
+    );
   }
 
   private async finish(poolId: string) {

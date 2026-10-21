@@ -30,6 +30,9 @@ const POOL_ERROR_LIST: Mapped[] = [
   { status: 400, code: "invalid_fee", message: "That fee isn't allowed." },
 ];
 
+/** How many errors the first release had. */
+const FIRST_RELEASE_ERRORS = 10;
+
 /**
  * Current contract code numbers these errors from 100. Deployments not yet
  * upgraded number them from 1 (and only have the first ten), so both are understood.
@@ -37,7 +40,7 @@ const POOL_ERROR_LIST: Mapped[] = [
 const POOL_ERRORS: Record<number, Mapped> = Object.fromEntries(
   POOL_ERROR_LIST.flatMap((mapped, i) => [
     [100 + i, mapped],
-    [1 + i, mapped],
+    ...(i < FIRST_RELEASE_ERRORS ? [[1 + i, mapped]] : []),
   ]),
 );
 

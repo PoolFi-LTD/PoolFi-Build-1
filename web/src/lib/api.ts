@@ -1,3 +1,4 @@
+import { httpApi } from "./api-http";
 import { sampleApi } from "./sample";
 import type {
   ActivityItem,
@@ -34,11 +35,13 @@ export interface PoolFiApi {
   listContacts(): Promise<Contact[]>;
 
   // Pools
+  /** PoolFi's payout fee in basis points (500 = 5%), as the contract takes it. */
+  getFeeBps(): Promise<number>;
   createPool(input: CreatePoolInput): Promise<PoolDetail>;
   getPool(id: string): Promise<PoolDetail>;
   addDivers(poolId: string, divers: NewDiver[]): Promise<PoolDetail>;
-  /** Marks who was reminded; returns the message to share with them. */
-  remindUnpaid(poolId: string): Promise<{ count: number; message: string }>;
+  /** Marks who was reminded and emails those with an email address; returns the message to share with the rest. */
+  remindUnpaid(poolId: string): Promise<{ count: number; emailed: number; message: string }>;
   getRecord(poolId: string): Promise<PoolRecord>;
 
   // The invite link (public)
@@ -62,7 +65,10 @@ export interface PoolFiApi {
   verifyReceipt(ref: string): Promise<Receipt | null>;
 }
 
-/** Sample data until the backend is merged; then this becomes the HTTP client. */
-export const api: PoolFiApi = sampleApi;
+/**
+ * The real backend once Supabase sign-in is set up (NEXT_PUBLIC_SUPABASE_URL);
+ * until then, the sample data in sample.ts, which goes once that's done.
+ */
+export const api: PoolFiApi = process.env.NEXT_PUBLIC_SUPABASE_URL ? httpApi : sampleApi;
 
 export { ApiError, messageOf } from "./errors";

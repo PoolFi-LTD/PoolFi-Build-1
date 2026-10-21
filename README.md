@@ -48,12 +48,18 @@ The server understands both error numberings, so it works before and after the u
 │       └── Cargo.toml
 ├── server                        HTTP API (Node.js, TypeScript)
 │   ├── src
+│   │   ├── app-routes.ts         the web app's endpoints (/v1/app)
+│   │   ├── api-types.ts          what those endpoints return, shared with web/
+│   │   ├── services/app/         pools, payouts, invites, home, wallet, receipts
+│   │   └── email/                emails (Resend) and their wording
 │   ├── migrations                database schema
 │   └── test                      unit and testnet end-to-end tests
-├── web                           web app (Next.js), desktop design
+├── web                           web app (Next.js); also serves the API at /api
+├── .github/workflows/refunds.yml runs the refund job every 10 minutes
 ├── docs
 │   └── contract-plan.md
-└── Cargo.toml                    workspace
+├── package.json                  npm workspaces: server and web, installed together
+└── Cargo.toml                    Rust workspace
 ```
 
 ## Requirements
@@ -166,6 +172,48 @@ All endpoints except `/health` and viewing a pool need `Authorization: Bearer <s
 | POST | `/v1/pools/:poolId/contributions` | `{ amount, fieldValues? }`: pays USDC into the pool, joining first if needed (membership `paid`) |
 | POST | `/v1/pools/:poolId/withdraw` | Pool admin only: once the goal is met, moves the pool's USDC into the admin's wallet (pool `settled`) |
 
+### Web app endpoints
+
+The screens in `web/` use `/v1/app`, shaped as `server/src/api-types.ts` describes. Amounts there are USDC as plain numbers (`1.58`). The pool's lifeguard (its admin) creates it; divers pay their share by invite link; approvers, if any, release the payout by majority.
+
+| Method | Path | Does |
+|---|---|---|
+| GET | `/v1/app/me` | The signed-in user (wallet made on first visit) |
+| PUT | `/v1/app/me/profile` | `{ firstName, lastName, avatar }` |
+| GET | `/v1/app/home` | Balance, alerts, the user's pools and recent activity |
+| GET | `/v1/app/pools` | Every pool the user leads, approves or paid into |
+| POST | `/v1/app/pools` | Creates a pool: share (with the fee covered by divers or not), expected divers, deadline, approvers, member list |
+| GET | `/v1/app/pools/:id` | One pool, with its divers, approvers, payout and activity. Contacts only for the lifeguard |
+| POST | `/v1/app/pools/:id/divers` | Lifeguard: adds people to the list |
+| POST | `/v1/app/pools/:id/reminders` | Lifeguard: marks the unpaid as reminded and returns the message to send |
+| GET | `/v1/app/pools/:id/record` | The pool's statement |
+| POST | `/v1/app/pools/:id/payout` | Lifeguard: `{ destination: "wallet" }`. Paid at once without approvers; otherwise waits for them. Bank is "coming soon" |
+| POST | `/v1/app/pools/:id/payout/approve` | Approver: agrees; the last approval needed pays out |
+| POST | `/v1/app/pools/:id/payout/decline` | Approver: `{ reason }`; the money stays and the lifeguard can ask again |
+| GET | `/v1/app/invites/:code` | Public: what the invite link shows (names only) |
+| POST | `/v1/app/invites/:code/pay` | `{ diverId }` or `{ name }`: pays the share from the user's wallet, returns the receipt reference |
+| GET | `/v1/app/activity`, `/v1/app/contacts` | The user's activity feed; people they share pools with (for picking approvers) |
+| GET | `/v1/app/wallet` | Address, balance and history |
+| POST | `/v1/app/wallet/deposits` | `{ amount }`: test USDC (testnet) |
+| GET | `/v1/app/receipts/:ref` | Public: checks a receipt |
+| GET | `/v1/app/fee` | Public: the contract's payout fee in basis points |
+
+### Emails
+
+With `RESEND_API_KEY` set, the server emails people (through Resend) when something happens in their pools. Only people with an email address get one; phone sign-ins don't. A failed email is logged and never stops a payment or payout.
+
+| When | Who | Email |
+|---|---|---|
+| A share is paid | The payer | Their receipt, with its reference |
+| The goal is reached | The lifeguard | "Reached its goal", with a link to request the payout |
+| A payout is requested | Each approver | "Needs your approval", with a link to approve or decline |
+| An approver declines | The lifeguard | Who declined, and why |
+| The payout is paid | The lifeguard | What landed, the fee and the reference |
+| The lifeguard taps Remind | People on the list whose contact is an email address | A reminder with the invite link, at most once every 12 hours each |
+| A missed goal is refunded | Each refunded diver | Their money is back |
+
+The messages are in `server/src/email/messages.ts`. Sign-in codes are sent by Supabase, through Resend too (see [Supabase](#1-supabase)).
+
 ### Escrow
 
 - **Withdrawal:** only the pool's admin can withdraw, only after the goal is met (which can only happen before the deadline), and only once. The contract enforces all three; the API explains a refusal (`goal_not_reached`, `already_withdrawn`, `pool_refunded`, `not_pool_admin`).
@@ -173,22 +221,86 @@ All endpoints except `/health` and viewing a pool need `Authorization: Bearer <s
 
 ### Running it
 
-Requires Node.js 22 or newer and PostgreSQL.
+Requires Node.js 22 or newer and PostgreSQL. The server and the web app are npm workspaces, installed together from the repository root:
 
 ```sh
-cd server
-npm install
-cp .env.example .env   # then fill in the blanks
-npm run db:local       # optional: a private local Postgres on port 54329
-npm run dev            # applies migrations and starts on PORT
+npm install                       # in the repository root
+cp server/.env.example server/.env   # then fill in the blanks
+npm --workspace server run db:local  # optional: a private local Postgres on port 54329
+npm run migrate                   # creates or updates the tables
+npm --workspace server run dev    # the API alone, on PORT
+npm run dev                       # or: the web app with the API at /api, on port 3000
 ```
+
+For `npm run dev`, link the server's settings into the web app once: `ln -s ../server/.env web/.env.local`.
 
 ### Tests
 
 ```sh
-npm test               # unit tests
-npm run test:e2e       # the full flow and escrow on Stellar testnet through the API (about 4 minutes)
+npm test                              # unit tests
+npm --workspace server run test:e2e   # the flows and escrow on Stellar testnet through the API (about 7 minutes)
 ```
+
+`app-flow.test.ts` runs the web app's flow: a pool with three approvers and a fee-covering share, the invite link, paying (including a failed payment that frees the name again), reminders, a declined payout, then a majority approval that pays the lifeguard less the fee, and the wallet, record, receipt and contacts that follow.
 
 The end-to-end tests sign in users, create their wallets on testnet, deposit test USDC, create pools, join and contribute, withdraw, and wait out a short deadline to check that contributors are refunded automatically, checking each result on-chain. They run in temporary databases they drop afterwards.
 
+
+## Deploying on Vercel
+
+One Vercel project serves the web app and the API: `web/src/app/api/[...path]/route.ts` runs the server inside the web app at `/api`. The database and sign-in are on Supabase. Secret values go into Vercel and Supabase, never into the repository.
+
+### 1. Supabase
+
+- **Database.** Project Settings → Database → Connect → **Session pooler** (port 5432). That's `DATABASE_URL`, with `?sslmode=require&uselibpqcompat=true` added so the connection is encrypted. Not the transaction pooler (port 6543): the server uses session locks. Not the direct connection either: it's IPv6-only, and Vercel can't reach it.
+- **Email codes, sent through Resend.** Authentication → Sign In / Providers → Email on. Authentication → Emails → **SMTP Settings** → enable custom SMTP: host `smtp.resend.com`, port `465`, username `resend`, password your Resend API key, sender email an address on your Resend-verified domain (e.g. `noreply@thepoolfi.com`), sender name `PoolFi`. Then Authentication → Emails → Templates: paste [docs/supabase-sign-in-email.html](docs/supabase-sign-in-email.html) into both **Confirm signup** (new accounts) and **Magic Link** (returning ones), with the subject `Your PoolFi code is {{ .Token }}`. The app asks for the 6 digits, so the email must show `{{ .Token }}` rather than a link. With custom SMTP, raise the email limit under Authentication → Rate Limits (it starts at 30 an hour). Phone codes also need an SMS provider under Phone; until then set `NEXT_PUBLIC_SIGNIN_METHODS=email`.
+- **Site URL.** Authentication → URL Configuration → your domain.
+- **Keys.** Project Settings → API: the project URL and the anon (publishable) key, for the web app. To check sign-ins, the server needs `AUTH_JWKS_URL=https://<project>.supabase.co/auth/v1/.well-known/jwks.json` (projects on JWT signing keys, the default for new ones), or the project's legacy JWT secret as `AUTH_JWT_SECRET`. Either way set `AUTH_JWT_ISSUER=https://<project>.supabase.co/auth/v1` and `AUTH_JWT_AUDIENCE=authenticated`.
+
+### 2. Tables
+
+Create them before the first deploy, and run it again whenever `server/migrations` gains a file. With `DATABASE_URL` in `server/.env` set to the Supabase session pooler URL:
+
+```bash
+npm run migrate
+```
+
+Migration `004_lock_tables.sql` closes PoolFi's tables to Supabase's public Data API, so the anon key in the web page can't read or change them.
+
+### 3. The Vercel project
+
+- Import the repository. **Root Directory: `web`**, framework Next.js. Keep **Include files outside the root directory in the Build Step** on: the web app builds the server's code from `../server`. `web/vercel.json` installs both workspaces from the root lockfile (`cd .. && npm ci`).
+- Node.js 22 or newer.
+- Environment variables (Production, and Preview if you use it):
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | Supabase session pooler URL, plus `?sslmode=require&uselibpqcompat=true` |
+| `DATABASE_POOL_MAX` | `3` |
+| `STELLAR_RPC_URL` | `https://soroban-testnet.stellar.org` |
+| `STELLAR_NETWORK_PASSPHRASE` | `Test SDF Network ; September 2015` |
+| `POOL_CONTRACT_ID` | The pool contract (see [Deployments](#deployments)) |
+| `USDC_ISSUER` | `GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5` (Circle testnet) |
+| `SPONSOR_SECRET` | The fee-paying account's secret key |
+| `WALLET_ENCRYPTION_KEY` | 32 random bytes, base64. Never change it once wallets exist: it's the only way to open them |
+| `AUTH_JWKS_URL` or `AUTH_JWT_SECRET`, `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE` | From Supabase, as above |
+| `DEPOSIT_PROVIDER`, `TREASURY_SECRET` | `testnet-treasury` and the treasury's secret key (testnet only; leave both out to turn deposits off) |
+| `CRON_SECRET` | A long random string (`openssl rand -hex 32`) |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Your Resend key, and the sender on your Resend-verified domain, e.g. `PoolFi <noreply@thepoolfi.com>`. Optional: `EMAIL_REPLY_TO`, and `EMAIL_TIME_ZONE` (default `Africa/Lagos`) |
+| `APP_URL` | Optional: the site's address for links in reminders, e.g. `https://thepoolfi.com` (defaults to the Vercel production domain) |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | From Supabase. Setting these switches the app from sample data to the real backend |
+| `NEXT_PUBLIC_SIGNIN_METHODS` | `email` until SMS is set up |
+
+`NEXT_PUBLIC_` values are built into the page, so redeploy after changing them.
+
+### 4. Refunds
+
+Pools that miss their deadline are refunded by `/api/cron/refunds`. Vercel Cron calls it daily (the most the free plan allows, `web/vercel.json`). For refunds within minutes, `.github/workflows/refunds.yml` calls it every 10 minutes once two repository secrets are set (Settings → Secrets and variables → Actions): `POOLFI_URL` (the site, e.g. `https://thepoolfi.com`) and `CRON_SECRET` (the same value as on Vercel).
+
+### 5. Check it
+
+`https://<your domain>/api/health` should answer `{"status":"ok", ...}` with the contract ID. Then sign in with an email code, add test USDC in the wallet, create a pool and pay into it from a second account.
+
+### Moving to the client's contract
+
+The client's deployment runs the first release until its Admin upgrades it ([Contract code versions](#contract-code-versions)). After `upgrade` and `set_fee`, change `POOL_CONTRACT_ID` to it and redeploy. Pools belong to the contract they were made on, so pools made on the development deployment won't show after the switch.

@@ -199,12 +199,12 @@ export function WaterTank({ pct, from, line, sub, height = 248, refunded, drain,
   );
 }
 
-export function FeeTip({ on, onChange, children }: { on: boolean; onChange: (on: boolean) => void; children: ReactNode }) {
+export function FeeTip({ feeBps, on, onChange, children }: { feeBps: number; on: boolean; onChange: (on: boolean) => void; children: ReactNode }) {
   return (
     <div className={`${s.feeTip} say-in`}>
       <Drip size={34} pop />
       <div style={{ flex: 1 }}>
-        <div className={s.feeTitle}>Let divers cover PoolFi&apos;s 5% fee?</div>
+        <div className={s.feeTitle}>Let divers cover PoolFi&apos;s {feeBps / 100}% fee?</div>
         <div className={s.feeText}>{children}</div>
       </div>
       <Toggle on={on} onChange={onChange} label="Let divers cover the fee" />

@@ -6,6 +6,7 @@ import { FieldDefinitions, validateFieldValues, type FieldDefinition, type Field
 import { formatUsdc, isUsdcAmount, parseUsdc } from "../money.ts";
 import type { Chain } from "../stellar/chain.ts";
 import type { PoolContract, PoolStatus } from "../stellar/pool-contract.ts";
+import { newPoolCode } from "./app/common.ts";
 import { toApiError } from "./chain-errors.ts";
 import type { Wallets } from "./wallets.ts";
 
@@ -134,21 +135,37 @@ export class Pools {
     const keypair = await this.wallets.keypair(user.id);
     const { chainPoolId, txHash } = await this.onChain(() => this.contract.createPool(keypair, goal, deadline));
 
-    const [row] = await this.db.query<PoolRow>(
-      `insert into pools (contract_id, chain_pool_id, admin_user_id, name, description, goal_amount, deadline, fields, create_tx_hash)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning *`,
-      [
-        this.contracts.pool,
-        chainPoolId.toString(),
-        user.id,
-        input.name,
-        input.description ?? null,
-        goal.toString(),
-        deadline,
-        JSON.stringify(input.fields),
-        txHash,
-      ],
-    );
+    // One share is the whole goal here; the web app's pools (/v1/app) split it per person.
+    const insert = () =>
+      this.db.query<PoolRow>(
+        `insert into pools (contract_id, chain_pool_id, admin_user_id, name, description, goal_amount, deadline, fields,
+           create_tx_hash, code, share_amount, expected_count)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $6, 1) returning *`,
+        [
+          this.contracts.pool,
+          chainPoolId.toString(),
+          user.id,
+          input.name,
+          input.description ?? null,
+          goal.toString(),
+          deadline,
+          JSON.stringify(input.fields),
+          txHash,
+          newPoolCode(),
+        ],
+      );
+    let rows: PoolRow[];
+    for (let attempt = 1; ; attempt++) {
+      try {
+        rows = await insert();
+        break;
+      } catch (error) {
+        const e = error as { code?: string; constraint?: string };
+        if (attempt < 5 && e.code === "23505" && e.constraint === "pools_code_key") continue;
+        throw error;
+      }
+    }
+    const [row] = rows;
     if (!row) throw new Error(`Pool ${chainPoolId} (tx ${txHash}) was not saved`);
     return this.view(row, user.id);
   }

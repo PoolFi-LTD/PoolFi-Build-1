@@ -13,6 +13,15 @@ const contractAddress = z
   .refine((v) => StrKey.isValidContract(v), "must be a contract address (C...)");
 const usdcAmount = z.string().refine(isUsdcAmount, "must be a USDC amount, e.g. 500 or 12.5");
 
+function isTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const EnvSchema = z
   .object({
     PORT: z.coerce.number().int().positive().default(8080),
@@ -20,6 +29,10 @@ const EnvSchema = z
     LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
     // Comma-separated browser origins allowed to call the API, e.g. https://thepoolfi.com
     CORS_ORIGINS: z.string().optional(),
+    // The web app's address, for links the API writes (invite links in reminders).
+    // On Vercel it defaults to the production domain.
+    APP_URL: z.url().optional(),
+    VERCEL_PROJECT_PRODUCTION_URL: z.string().optional(),
 
     // Use a session-mode or direct connection: wallet locks are Postgres advisory locks.
     DATABASE_URL: z.string().min(1),
@@ -55,6 +68,17 @@ const EnvSchema = z
     DEPOSIT_MAX_USDC: usdcAmount.default("500"),
     DEPOSIT_DAILY_MAX_USDC: usdcAmount.default("1000"),
 
+    // Emails (receipts, approval requests, payouts, reminders, refunds) go out through
+    // Resend. Unset sends none. EMAIL_FROM must be on a domain verified in Resend.
+    RESEND_API_KEY: z.string().startsWith("re_", "must be a Resend API key (re_...)").optional(),
+    EMAIL_FROM: z.string().min(3).optional(),
+    EMAIL_REPLY_TO: z.email().optional(),
+    // Dates in emails are written in this time zone.
+    EMAIL_TIME_ZONE: z
+      .string()
+      .refine(isTimeZone, "must be a time zone, e.g. Africa/Lagos")
+      .default("Africa/Lagos"),
+
     // How often the server refunds contributors of pools that missed their goal. 0 turns
     // the built-in schedule off (run `npm run refunds` from an external scheduler instead).
     REFUND_JOB_INTERVAL_SECONDS: z.coerce.number().int().min(0).default(300),
@@ -64,6 +88,9 @@ const EnvSchema = z
   .superRefine((env, ctx) => {
     if (!env.AUTH_JWKS_URL && !env.AUTH_JWT_SECRET) {
       ctx.addIssue({ code: "custom", path: ["AUTH_JWKS_URL"], message: "set AUTH_JWKS_URL or AUTH_JWT_SECRET" });
+    }
+    if (env.RESEND_API_KEY && !env.EMAIL_FROM) {
+      ctx.addIssue({ code: "custom", path: ["EMAIL_FROM"], message: "set the sender, e.g. PoolFi <noreply@thepoolfi.com>" });
     }
     if (env.DEPOSIT_PROVIDER === "testnet-treasury") {
       if (env.STELLAR_NETWORK_PASSPHRASE !== Networks.TESTNET) {
@@ -94,6 +121,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       .split(",")
       .map((origin) => origin.trim())
       .filter(Boolean),
+    appUrl: e.APP_URL ?? (e.VERCEL_PROJECT_PRODUCTION_URL ? `https://${e.VERCEL_PROJECT_PRODUCTION_URL}` : null),
     databaseUrl: e.DATABASE_URL,
     databasePoolMax: e.DATABASE_POOL_MAX,
     stellar: {
@@ -123,6 +151,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
             maxPerDeposit: parseUsdc(e.DEPOSIT_MAX_USDC),
             dailyMax: parseUsdc(e.DEPOSIT_DAILY_MAX_USDC),
           }
+        : null,
+    email:
+      e.RESEND_API_KEY && e.EMAIL_FROM
+        ? { resendApiKey: e.RESEND_API_KEY, from: e.EMAIL_FROM, replyTo: e.EMAIL_REPLY_TO ?? null, timeZone: e.EMAIL_TIME_ZONE }
         : null,
     refundJob: {
       intervalSeconds: e.REFUND_JOB_INTERVAL_SECONDS,

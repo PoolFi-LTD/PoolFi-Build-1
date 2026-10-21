@@ -4,7 +4,7 @@
  * passes below the goal.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { parseUsdc } from "../../src/money.ts";
+import { formatUsdc, parseUsdc } from "../../src/money.ts";
 import { startHarness, type Harness } from "./harness.ts";
 
 let h: Harness;
@@ -46,17 +46,20 @@ describe("withdrawal", () => {
     expect(await balance(member)).toBe("2");
     expect(await balance(stranger)).toBe("0");
 
+    // The admin gets the pool less PoolFi's fee (none on a contract without one).
+    const bps = BigInt((await h.contract.fee())?.bps ?? 0);
+    const net = formatUsdc(parseUsdc("10") - (parseUsdc("10") * bps) / 10_000n);
     const withdrawn = await withdraw(admin);
     expect(withdrawn.status).toBe(200);
-    expect(withdrawn.body.withdrawal).toMatchObject({ amount: "10", txHash: expect.stringMatching(/^[0-9a-f]{64}$/) });
-    expect(withdrawn.body.pool).toMatchObject({ status: "settled", withdrawal: { amount: "10" } });
-    expect(await balance(admin)).toBe("10");
+    expect(withdrawn.body.withdrawal).toMatchObject({ amount: net, txHash: expect.stringMatching(/^[0-9a-f]{64}$/) });
+    expect(withdrawn.body.pool).toMatchObject({ status: "settled", withdrawal: { amount: net } });
+    expect(await balance(admin)).toBe(net);
     expect((await h.contract.getPool(BigInt(created.body.pool.chainPoolId))).status).toBe("settled");
 
     const again = await withdraw(admin);
     expect(again.status).toBe(409);
     expect(again.body.error.code).toBe("already_withdrawn");
-    expect(await balance(admin)).toBe("10");
+    expect(await balance(admin)).toBe(net);
 
     const late = await h.call("POST", `/v1/pools/${poolId}/contributions`, member, { amount: "1" });
     expect(late.body.error.code).toBe("pool_closed");
@@ -109,6 +112,17 @@ describe("automatic refunds", () => {
     expect(view.body.pool.membership).toMatchObject({ status: "refunded", refund: { amount: "5" } });
     const carolView = await h.call("GET", `/v1/pools/${poolId}`, carol);
     expect(carolView.body.pool.membership).toMatchObject({ status: "pending", refund: null });
+
+    // Both get an email saying their money is back; Carol never paid, so she doesn't.
+    const refundEmails = h.emails.filter((e) => e.subject.startsWith("Your ") && e.subject.includes("Community borehole is back"));
+    expect(refundEmails.map((e) => [e.to, e.subject]).sort()).toEqual([
+      ["alice@example.com", "Your 5.00 USDC from Community borehole is back"],
+      ["bob@example.com", "Your 3.00 USDC from Community borehole is back"],
+    ]);
+
+    // The pool's activity says so, once.
+    const notes = await h.db.query<{ amount: string }>("select amount from activity where pool_id = $1 and kind = 'refund'", [poolId]);
+    expect(notes).toEqual([{ amount: parseUsdc("8").toString() }]);
 
     // Running again does nothing: the pool is finished and nobody is paid twice.
     expect(await h.services.refunds.runOnce()).toMatchObject({ poolsChecked: 0, refunds: 0 });

@@ -46,6 +46,7 @@ export function RemindModal({ open, onClose, poolId, unpaid, onReminded }: { ope
   const toast = useToast();
   const remind = useAction(api.remindUnpaid);
   const [message, setMessage] = useState<string | null>(null);
+  const [emailed, setEmailed] = useState(0);
   const close = () => {
     setMessage(null);
     onClose();
@@ -56,7 +57,9 @@ export function RemindModal({ open, onClose, poolId, unpaid, onReminded }: { ope
         <h2 className="t-h2">Remind {unpaid} divers</h2>
         {message ? (
           <div className="cs-in" style={{ display: "grid", gap: 14 }}>
-            <p className="muted t-small">They&apos;ll see a reminder in PoolFi. Send it to the group too:</p>
+            <p className="muted t-small">
+              They&apos;ll see a reminder in PoolFi{emailed > 0 ? `, and ${emailed} ${emailed === 1 ? "got it" : "got theirs"} by email` : ""}. Send it to the group too:
+            </p>
             <div style={{ padding: 14, borderRadius: 14, background: "var(--bg)", fontSize: 14, whiteSpace: "pre-wrap" }}>{message}</div>
             <a className="btn btn-success btn-block" href={whatsappUrl(message)} target="_blank" rel="noreferrer">
               <Icon name="wa" /> Send on WhatsApp
@@ -84,6 +87,7 @@ export function RemindModal({ open, onClose, poolId, unpaid, onReminded }: { ope
                   // The reminders fly off like a paper plane.
                   flyPlane(button);
                   setMessage(done.value.message);
+                  setEmailed(done.value.emailed);
                   onReminded();
                   toast(`${done.value.count} divers reminded`, "🔔");
                 }

@@ -38,9 +38,9 @@ export class Wallets {
   /** Records the signed-in user and returns their wallet, creating and activating it if needed. */
   async ensureUser(user: AuthUser): Promise<Wallet> {
     await this.db.query(
-      `insert into users (id, email) values ($1, $2)
-       on conflict (id) do update set email = coalesce(excluded.email, users.email)`,
-      [user.id, user.email],
+      `insert into users (id, email, phone) values ($1, $2, $3)
+       on conflict (id) do update set email = coalesce(excluded.email, users.email), phone = coalesce(excluded.phone, users.phone)`,
+      [user.id, user.email, user.phone],
     );
     let row = (await this.find(user.id)) ?? (await this.create(user.id));
     if (!row.activated_at) row = await this.activate(row.user_id);

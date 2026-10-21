@@ -2,21 +2,24 @@
 
 The PoolFi web app, built from the Figma designs (desktop and mobile) and the prototype. Next.js 16 (App Router), React 19, TypeScript, CSS Modules.
 
-It currently runs on **sample data** stored in your browser, so every screen can be reviewed before it is connected to the server and the contract.
+It talks to the PoolFi API, which it also serves at `/api` (the server in `../server`), with Supabase for sign-in. Until Supabase is set up (`NEXT_PUBLIC_SUPABASE_URL`), it runs on **sample data** kept in your browser instead, so every screen can be reviewed without the backend.
 
 ## Run it
 
-Requires Node.js 22 or newer.
+Requires Node.js 22 or newer. The web app and the server are installed together from the repository root:
 
 ```sh
-cd web
-npm install
-npm run dev        # http://localhost:3000
+npm install        # in the repository root
+npm run dev        # http://localhost:3000, the web app and the API at /api
 ```
 
-`npm run build` makes a production build, and `npm run lint` checks the code.
+`npm run build` makes a production build, and `npm --workspace web run lint` checks the code.
+
+The API reads the server's settings. Locally, link them in once: `ln -s ../server/.env web/.env.local` (see [the server's settings](../server/.env.example)). Without them the screens still work on sample data, and `/api` answers `503`.
 
 ### Signing in with sample data
+
+While Supabase isn't set up:
 
 Any 6-digit code works. No message is sent.
 
@@ -36,15 +39,18 @@ The sample data also simulates what the backend will do:
 
 ## Settings
 
-All optional, in `web/.env.local`:
+In `web/.env.local` (or Vercel's environment variables). `NEXT_PUBLIC_` values are built into the page, so change them before building:
 
 | Variable | Default | What it does |
 |---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | none | Your Supabase project URL. Setting it switches the app from sample data to the real backend |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | none | The project's anon (publishable) key |
+| `NEXT_PUBLIC_SIGNIN_METHODS` | `phone,email` | Sign-in options on the sign-up screen (`email`, `phone` or both). Phone needs an SMS provider in Supabase |
 | `NEXT_PUBLIC_APP_URL` | the current site | Base for invite links, receipt QR codes and statement links |
-| `NEXT_PUBLIC_SIGNIN_METHODS` | `phone,email` | Sign-in options on the sign-up screen (`email`, `phone` or both) |
 | `NEXT_PUBLIC_STELLAR_NETWORK` | `testnet` | On `testnet` the wallet shows an "Add 10 test USDC" button |
 | `NEXT_PUBLIC_NGN_PER_USDC` | `1400` | Rate used to turn the design's Naira presets into USDC |
-| `NEXT_PUBLIC_FEE_BPS` | `500` | PoolFi fee shown while creating a pool (5%) |
+
+PoolFi's fee comes from the contract (`GET /api/v1/app/fee`), so what the create screen shows is what the pool charges.
 
 ## Layout
 
@@ -62,8 +68,9 @@ web/src
 │   └── providers.tsx     signed-in user and toasts
 └── lib/
     ├── api.ts            every call the app makes (the PoolFiApi interface)
-    ├── sample.ts         SAMPLE DATA: the only file to delete when connecting the backend
-    ├── types.ts          shapes of the data the API returns
+    ├── api-http.ts       the real one: Supabase sign-in and the server's /api/v1/app
+    ├── sample.ts         SAMPLE DATA, used until Supabase is set up; delete it after
+    ├── types.ts          shapes of the data the API returns (from ../server/src/api-types.ts)
     ├── money.ts          USDC formatting, fee maths
     ├── people.ts         parsing names, Nigerian phone numbers and emails from lists and files
     ├── receipt-image.ts, record-files.ts   receipt image, statement PDF, summary image, CSV
@@ -121,20 +128,22 @@ The prototype's sounds are short tones made in the browser (`src/lib/sound.ts`),
 
 On phones that support it, the bigger moments also buzz.
 
-## Connecting the backend
+## The backend
 
-Every screen talks to `api` in `src/lib/api.ts` and nothing else. Today it is:
+Every screen talks to `api` in `src/lib/api.ts` and nothing else:
 
 ```ts
-export const api: PoolFiApi = sampleApi;
+export const api: PoolFiApi = process.env.NEXT_PUBLIC_SUPABASE_URL ? httpApi : sampleApi;
 ```
 
-To connect the real backend:
-1. Write a `PoolFiApi` implementation that calls the server, with Supabase email codes for sign-in.
-2. Point `api` at it.
-3. Delete `src/lib/sample.ts`.
+- `httpApi` (`src/lib/api-http.ts`) signs in with Supabase (a 6-digit code by email or SMS) and calls the server at `/api/v1/app` with the Supabase session. The server's routes are in `../server/src/app-routes.ts`.
+- `sampleApi` (`src/lib/sample.ts`) is the sample data. Once the real backend is running, delete it and the switch.
 
-No screen needs to change. The interface and `types.ts` are the contract between the web app and the server.
+The types the screens use (`src/lib/types.ts`) come from the server's `src/api-types.ts`, so the two can't drift apart.
+
+### How the API runs inside the web app
+
+`src/app/api/[...path]/route.ts` hands every `/api/*` request to the server's Fastify app in the same process, so one Vercel project serves both. `src/app/api/cron/refunds/route.ts` runs the refund job when Vercel Cron (or the GitHub workflow in `.github/workflows/refunds.yml`) calls it with `CRON_SECRET`. The deploy steps are in [the main README](../README.md#deploying-on-vercel).
 
 ## Screens
 

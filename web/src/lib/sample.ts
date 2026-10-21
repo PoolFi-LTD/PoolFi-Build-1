@@ -601,6 +601,8 @@ export const sampleApi: PoolFiApi = {
         .map((id) => ({ userId: id, name: fullName(s.users[id]), detail: "In your contacts" }));
     }),
 
+  getFeeBps: () => respond(() => FEE_BPS, 60),
+
   createPool: (input: CreatePoolInput) =>
     respond(() => {
       const s = load();
@@ -675,6 +677,7 @@ export const sampleApi: PoolFiApi = {
       const link = `${typeof window !== "undefined" ? window.location.origin : ""}/p/${p.code}`;
       return {
         count: unpaid.length,
+        emailed: 0,
         message: `Reminder 👋 If you haven't paid your ${shareOf(p).toFixed(2)} USDC for ${p.name} yet, here's the link: ${link}`,
       };
     }),

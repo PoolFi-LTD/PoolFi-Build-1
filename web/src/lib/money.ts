@@ -26,10 +26,11 @@ export function formatUsdc(value: Usdc, options: { sign?: boolean } = {}): strin
 /** What each diver pays so the lifeguard still receives `amount` after the fee. */
 export function grossShare(amount: Usdc, feeBps: number, covered: boolean): Usdc {
   if (!covered || feeBps <= 0) return roundUsdc(amount);
-  return Math.ceil((amount / (1 - feeBps / 10_000)) * 100) / 100;
+  // In whole cents, as the server works it out, so 1.90 at 5% is 2.00 and not 2.01.
+  return Math.ceil((Math.round(amount * 100) * 10_000) / (10_000 - feeBps)) / 100;
 }
 
-/** The platform fee on `gross`, rounded down to the cent like the contract does. */
+/** The platform fee on `gross` as the contract takes it: rounded down to USDC's 7th decimal. */
 export function feeOf(gross: Usdc, feeBps: number): Usdc {
-  return Math.floor((Math.round(gross * 100) * feeBps) / 10_000) / 100;
+  return Math.floor((Math.round(gross * 1e7) * feeBps) / 10_000) / 1e7;
 }

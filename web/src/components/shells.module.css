@@ -1,0 +1,195 @@
+/* App shell: sidebar + white main panel */
+.app {
+  display: flex;
+  align-items: flex-start;
+  min-height: 100vh;
+  padding: 18px 18px 18px 0;
+  background: var(--bg);
+}
+
+.sidebar {
+  position: sticky;
+  top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: none;
+  width: 276px;
+  height: calc(100vh - 36px);
+  min-height: 640px;
+  padding: 10px 20px;
+}
+
+.sidebarLogo { display: inline-flex; padding: 0 0 8px 0; }
+
+.sectionLabel {
+  padding: 20px 0 6px 14px;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--slate);
+}
+
+.nav svg { transition: transform 420ms var(--ease-splash); }
+.nav {
+  transition: background 150ms, color 150ms;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 236px;
+  height: 48px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  color: var(--slate);
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 15px;
+  line-height: 120%;
+}
+.nav:hover { color: var(--ink); background: rgba(255, 255, 255, 0.6); }
+.navActive,
+.navActive:hover { background: var(--white); border-color: var(--line-soft); box-shadow: var(--shadow-hairline); color: var(--blue); }
+.navActive svg { transform: scale(1.12); }
+
+.userCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 236px;
+  margin-top: auto;
+  padding: 14px;
+  border-radius: 20px;
+  background: var(--white);
+}
+.userRow { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.userName { font-family: var(--font-display); font-weight: 500; font-size: 15px; }
+.userEmail { color: var(--slate); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.main {
+  flex: 1;
+  min-width: 0;
+  min-height: calc(100vh - 36px);
+  display: flex;
+  flex-direction: column;
+  padding: 30px 40px 40px;
+  border: 1px solid var(--line-soft);
+  border-radius: 32px;
+  background: var(--white);
+  /* Pages slide in inside the panel, not over the sidebar. */
+  overflow: clip;
+}
+.screen { flex: 1; display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+
+/* Split screens: blue story panel on the left */
+.split { display: grid; grid-template-columns: minmax(520px, 44%) 1fr; min-height: 100vh; background: var(--white); }
+.splitGrey { background: var(--bg); }
+.bluePanel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 36px;
+  overflow: hidden;
+  background: var(--blue);
+  color: var(--white);
+}
+.blueMiddle { position: relative; flex: 1; display: grid; place-items: center; min-height: 0; }
+.blueStory { position: relative; z-index: 2; padding-bottom: 110px; }
+.blueStory p { max-width: 380px; margin-top: 16px; font-size: 16px; opacity: 0.92; }
+.serifCyan { color: var(--cyan); display: block; }
+.splitRight { display: flex; flex-direction: column; align-items: center; padding: 40px; }
+
+/* Focus screens (create flow): progress bar on top, no sidebar */
+.focus { min-height: 100vh; background: var(--bg); display: flex; flex-direction: column; }
+.focusTop { display: flex; align-items: center; gap: 16px; width: min(800px, calc(100% - 48px)); margin: 28px auto 0; }
+.focusTop :global(.progress) { flex: 1; }
+.plainIcon { display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; background: none; color: var(--slate); cursor: pointer; }
+.plainIcon:hover { color: var(--ink); }
+.focusBody { flex: 1; width: min(1100px, calc(100% - 48px)); margin: 0 auto; padding: 40px 0 140px; }
+.focusFooter { position: fixed; left: 0; right: 0; bottom: 0; display: grid; place-items: center; padding: 20px 24px 28px; background: linear-gradient(transparent, var(--bg) 35%); }
+.focusFooter > * { width: min(466px, 100%); }
+
+/* Page header inside the main panel: back button + title */
+.pageHead { display: flex; align-items: center; gap: 16px; }
+.pageHead h1 { flex: 1; }
+.backBtn { flex: none; }
+.headEmoji { display: grid; place-items: center; flex: none; width: 56px; height: 56px; border-radius: 16px; background: var(--cyan-100); font-size: 30px; }
+.headSub { margin-top: 4px; }
+.waveRoom { height: 110px; }
+.tabBar { display: none; }
+
+/* ---------- phones ---------- */
+@media (max-width: 899px) {
+  .app { display: block; padding: 0; }
+  .sidebar { display: none; }
+  .main { min-height: 100vh; padding: 14px 20px 120px; border: 0; border-radius: 0; }
+  .tabbed { padding: 20px 16px 120px; }
+  .screen { gap: 16px; }
+
+  /* Top bar: a plain back chevron and a 22px title */
+  .pageHead { gap: 10px; }
+  .backBtn { width: 32px; height: 32px; margin-left: -6px; background: none; color: var(--ink); }
+  .backBtn:hover { background: none; }
+  .headTitle { font-size: 22px; line-height: 1.25; letter-spacing: -0.3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .headEmoji { display: none; }
+  .headSub { font-size: 13px; }
+
+  /* The floating tab bar */
+  .tabBar {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    z-index: 40;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    align-items: center;
+    height: 72px;
+    padding: 0 6px;
+    border-radius: 26px;
+    background: var(--white);
+    box-shadow: var(--shadow-raised);
+  }
+  .tab { position: relative; z-index: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: 100%; color: var(--slate); font-family: var(--font-display); font-weight: 500; font-size: 11px; line-height: 1; transition: color 150ms; }
+  .tab svg { width: 24px; height: 24px; transition: transform 420ms var(--ease-splash); }
+  .tabOn { color: var(--blue); }
+  .tabOn svg { transform: translateY(-2px) scale(1.12); }
+  /* A soft blob springs up behind the chosen tab */
+  .tabOn::before { content: ""; position: absolute; top: 8px; z-index: -1; width: 42px; height: 32px; border-radius: 12px; background: var(--blue-50); animation: tabBlob 420ms var(--ease-splash); }
+  .fab { display: grid; place-items: center; justify-self: center; width: 60px; height: 60px; margin-top: -12px; border-radius: 999px; background: var(--blue); color: var(--white); box-shadow: 0 4px 0 var(--blue-edge), 0 12px 22px -8px rgba(27, 79, 216, 0.7); transition: transform 100ms var(--ease-out), box-shadow 100ms; }
+  .fab:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--blue-edge); }
+  .fab svg { width: 28px; height: 28px; }
+
+  /* Sign-in: the form fills the screen */
+  .split { display: block; min-height: 100vh; }
+  .authSplit .bluePanel { display: none; }
+  .splitRight { min-height: 100vh; padding: 0; align-items: stretch; }
+
+  /* Welcome: the blue story is the whole screen */
+  .welcomeSplit .splitRight { display: none; }
+  .welcomeSplit .bluePanel { min-height: 100vh; padding: 20px 24px 0; }
+  .welcomeSplit .blueMiddle { min-height: 220px; }
+  .welcomeSplit .blueStory { padding-bottom: 104px; text-align: center; }
+  .welcomeSplit .blueStory p { margin-left: auto; margin-right: auto; }
+  .story { min-height: 180px; }
+  .story :global(.t-serif) { font-size: 40px !important; }
+  .dots { display: flex; justify-content: center; gap: 6px; margin: 14px 0 18px; }
+  .dots i { width: 8px; height: 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.35); transition: width 320ms var(--ease-splash), background 220ms; }
+  .dots .dotOn { width: 26px; background: var(--white); }
+  .storyFoot { position: relative; z-index: 2; display: grid; gap: 8px; }
+
+  /* Invite: the blue hero on top, the card overlapping it */
+  .inviteSplit { background: var(--bg); }
+  .inviteHero { align-items: center; padding: 20px 20px 44px; text-align: center; }
+  .inviteHero > div { justify-content: flex-start !important; align-items: center; gap: 8px !important; }
+  .waveRoom { display: none; }
+  .inviteSplit .splitRight { min-height: 0; margin-top: -24px; padding: 0 16px; position: relative; z-index: 2; }
+
+  /* Create: one column, the button pinned to the bottom */
+  .focus { background: var(--white); }
+  .focusTop { width: auto; margin: 0; padding: 14px 16px 8px 12px; gap: 10px; }
+  .focusBody { width: auto; padding: 10px 20px 120px; }
+  .focusFooter { padding: 12px 20px calc(28px + env(safe-area-inset-bottom, 0px)); background: var(--white); }
+  .focusFooter > * { width: 100%; }
+}
+@keyframes tabBlob { from { transform: scale(0.4); opacity: 0; } }

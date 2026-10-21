@@ -1,0 +1,20 @@
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+.card { display: grid; gap: 12px; align-content: start; padding: 20px; border: 1px solid var(--line-soft); border-radius: 24px; }
+.cardHead { display: flex; justify-content: space-between; align-items: center; }
+.cardTitle { font-size: 19px; }
+.addressLine { display: flex; align-items: center; gap: 6px; color: var(--blue); font-size: 13px; }
+.addressLine button { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.deposit { justify-self: start; }
+.txIcon { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 12px; background: var(--bg); color: var(--slate); }
+
+/* ---------- phones ---------- */
+@media (max-width: 899px) {
+  .cols { grid-template-columns: 1fr; gap: 14px; }
+  .card { gap: 8px; padding: 16px 18px; border-radius: 20px; }
+  .cardTitle { font-size: 16px; font-weight: 500; }
+  .card :global(.t-amount-l) { font-size: 32px; letter-spacing: -0.8px; }
+  .deposit { justify-self: stretch; margin-top: 6px; }
+  .txPanel { padding: 0 !important; background: none !important; }
+  .txPanel :global(.row-card) { padding: 12px 14px !important; border-radius: 14px; background: var(--bg); }
+  .txIcon { display: none; }
+}

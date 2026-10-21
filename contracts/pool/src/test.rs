@@ -11,21 +11,28 @@ use soroban_sdk::{
     Address, Env, Event as _, IntoVal, Symbol,
 };
 
-const START: u64 = 1_780_000_000;
-const DAY: u64 = 86_400;
+pub(crate) const START: u64 = 1_780_000_000;
+pub(crate) const DAY: u64 = 86_400;
 /// USDC has 7 decimals on Stellar.
-const USDC: i128 = 10_000_000;
+pub(crate) const USDC: i128 = 10_000_000;
 
-struct Setup<'a> {
-    pool: PoolContractClient<'a>,
-    usdc: TokenClient<'a>,
-    usdc_admin: StellarAssetClient<'a>,
-    contract_admin: Address,
-    env: Env,
+pub(crate) struct Setup<'a> {
+    pub(crate) pool: PoolContractClient<'a>,
+    pub(crate) usdc: TokenClient<'a>,
+    pub(crate) usdc_admin: StellarAssetClient<'a>,
+    pub(crate) contract_admin: Address,
+    pub(crate) fee_recipient: Address,
+    pub(crate) env: Env,
 }
 
 impl<'a> Setup<'a> {
-    fn new() -> Self {
+    /// A contract with no platform fee.
+    pub(crate) fn new() -> Self {
+        Self::with_fee(0)
+    }
+
+    /// A contract taking `fee_bps` basis points of every payout.
+    pub(crate) fn with_fee(fee_bps: u32) -> Self {
         let env = Env::default();
         env.mock_all_auths();
         env.ledger().set_timestamp(START);
@@ -33,18 +40,23 @@ impl<'a> Setup<'a> {
         let issuer = Address::generate(&env);
         let sac = env.register_stellar_asset_contract_v2(issuer);
         let contract_admin = Address::generate(&env);
-        let contract_id = env.register(PoolContract, (&contract_admin, &sac.address()));
+        let fee_recipient = Address::generate(&env);
+        let contract_id = env.register(
+            PoolContract,
+            (&contract_admin, &sac.address(), fee_bps, &fee_recipient),
+        );
 
         Setup {
             pool: PoolContractClient::new(&env, &contract_id),
             usdc: TokenClient::new(&env, &sac.address()),
             usdc_admin: StellarAssetClient::new(&env, &sac.address()),
             contract_admin,
+            fee_recipient,
             env,
         }
     }
 
-    fn wallet(&self, usdc: i128) -> Address {
+    pub(crate) fn wallet(&self, usdc: i128) -> Address {
         let wallet = Address::generate(&self.env);
         if usdc > 0 {
             self.usdc_admin.mint(&wallet, &usdc);
@@ -52,22 +64,22 @@ impl<'a> Setup<'a> {
         wallet
     }
 
-    fn deadline(&self) -> u64 {
+    pub(crate) fn deadline(&self) -> u64 {
         START + 7 * DAY
     }
 
-    fn new_pool(&self, admin: &Address, goal: i128) -> u64 {
+    pub(crate) fn new_pool(&self, admin: &Address, goal: i128) -> u64 {
         self.pool.create_pool(admin, &goal, &self.deadline())
     }
 
-    fn pool_events(&self) -> testutils::ContractEvents {
+    pub(crate) fn pool_events(&self) -> testutils::ContractEvents {
         self.env
             .events()
             .all()
             .filter_by_contract(&self.pool.address)
     }
 
-    fn pass_deadline(&self) {
+    pub(crate) fn pass_deadline(&self) {
         self.env.ledger().set_timestamp(self.deadline());
     }
 }
@@ -110,6 +122,7 @@ fn pool_is_created() {
             admin: admin.clone(),
             goal_amount: goal,
             deadline: s.deadline(),
+            approvers: soroban_sdk::vec![&s.env],
         }
         .to_xdr(&s.env, &s.pool.address)]
     );
@@ -126,6 +139,8 @@ fn pool_is_created() {
             member_count: 0,
             status: PoolStatus::Open,
             created_at: START,
+            approvers: Some(soroban_sdk::vec![&s.env]),
+            payout_approvals: None,
         }
     );
     assert_eq!(s.new_pool(&s.wallet(0), goal), 1);

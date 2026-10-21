@@ -1,0 +1,271 @@
+/* Motion, taken from the PoolFi web prototype: the same keyframes, timings and easing. */
+
+:root {
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-splash: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --sand: #f4e8d2;
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ---------- keyframes ---------- */
+@keyframes inR { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes inL { from { transform: translateX(-28%); filter: brightness(0.92); } to { transform: none; filter: none; } }
+@keyframes inUp { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes inFade { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes outFade { to { opacity: 0; } }
+@keyframes brip { to { transform: scale(1); opacity: 0; } }
+@keyframes shake { 20%, 60% { transform: translateX(-7px); } 40%, 80% { transform: translateX(7px); } }
+@keyframes okpop { 50% { transform: translateY(-8px) scale(1.08); } }
+@keyframes otpok { 40% { transform: scale(1.03); } }
+@keyframes rowIn { 0% { background: var(--cyan-100); transform: translateX(-12px); } 100% { transform: none; } }
+@keyframes live { 0% { box-shadow: 0 0 0 0 var(--live, rgba(27, 79, 216, 0.5)); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@keyframes drift { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes bub { 0% { transform: translate(0, 0); } 50% { transform: translate(7px, -140px); } 100% { transform: translate(-4px, -290px); opacity: 0.2; } }
+@keyframes bob { 0%, 100% { transform: translateY(0) rotate(-5deg); } 50% { transform: translateY(-8px) rotate(4deg); } }
+@keyframes ripo { from { transform: scale(0.2); opacity: 1; } to { transform: scale(1.8); opacity: 0; } }
+@keyframes bubIn { from { opacity: 0; transform: scale(0.8) translateX(-10px); } }
+@keyframes celeIn { from { opacity: 0; transform: scale(1.08); } }
+@keyframes rays { to { transform: rotate(360deg); } }
+@keyframes sayIn { from { opacity: 0; transform: translateY(20px) scale(0.9); } to { opacity: 1; transform: none; } }
+@keyframes achIn { from { opacity: 0; transform: translateY(-30%) scale(0.6) rotate(-6deg); } }
+@keyframes medal { from { transform: scale(0) rotate(-180deg); } }
+@keyframes shine { to { left: 150%; } }
+@keyframes dbob { 0%, 100% { transform: translateY(0) scale(1, 1); } 50% { transform: translateY(-4%) scale(0.985, 1.015); } }
+@keyframes blink { 0%, 93%, 100% { transform: scaleY(0); } 96% { transform: scaleY(1); } }
+@keyframes djump { 0%, 100% { transform: translateY(0) scale(1, 1); } 25% { transform: translateY(0) scale(1.1, 0.88); } 55% { transform: translateY(-22%) scale(0.92, 1.08); } 80% { transform: translateY(0) scale(1.06, 0.94); } }
+@keyframes dwig { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-7deg); } 75% { transform: rotate(7deg); } }
+@keyframes dpop { from { transform: scale(0) rotate(-20deg); } }
+@keyframes sfill { to { height: 100%; } }
+@keyframes wx { to { background-position-x: 160px; } }
+@keyframes lgIn { from { transform: scale(0) translateY(40px); opacity: 0; } }
+@keyframes nb { 50% { transform: scale(1.08); } }
+@keyframes blinkc { 50% { opacity: 0; } }
+@keyframes mfill { to { height: 100%; } }
+@keyframes ringo { from { transform: scale(0.3); opacity: 1; } to { transform: scale(1.3); opacity: 0; } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes attn { 0%, 100% { box-shadow: 0 0 0 0 rgba(18, 183, 106, 0.35); } 50% { box-shadow: 0 0 0 6px rgba(18, 183, 106, 0); } }
+@keyframes attn2 { 0%, 100% { box-shadow: 0 0 0 0 rgba(27, 79, 216, 0.3); } 50% { box-shadow: 0 0 0 6px rgba(27, 79, 216, 0); } }
+@keyframes attn3 { 0%, 100% { box-shadow: 0 0 0 0 rgba(247, 144, 9, 0.3); } 50% { box-shadow: 0 0 0 6px rgba(247, 144, 9, 0); } }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } }
+@keyframes bellw { 0%, 60%, 100% { transform: rotate(0); } 10% { transform: rotate(18deg); } 20% { transform: rotate(-16deg); } 30% { transform: rotate(12deg); } 40% { transform: rotate(-8deg); } }
+@keyframes csIn { from { opacity: 0; transform: translateX(40px); } }
+@keyframes csBack { from { opacity: 0; transform: translateX(-40px); } }
+@keyframes growW { from { width: 0; } }
+@keyframes dialogIn { from { opacity: 0; transform: translateY(4%) scale(0.96); } }
+@keyframes dialogOut { to { opacity: 0; transform: translateY(4%) scale(0.96); } }
+@keyframes toastIn { from { transform: translate(-50%, calc(100% + 60px)); } }
+@keyframes toastOut { to { transform: translate(-50%, calc(100% + 60px)); } }
+@keyframes flashBg { from { background: var(--cyan-100); } }
+
+/* ---------- small helpers ---------- */
+.rise { animation: rise 420ms var(--ease-out) backwards; }
+.bounce { animation: dpop 600ms var(--ease-splash); }
+.shake { animation: shake 380ms linear; }
+.bump { display: inline-block; animation: nb 260ms var(--ease-splash); }
+.okpop { animation: okpop 400ms var(--ease-splash); }
+.cs-in { animation: csIn 380ms var(--ease-out) backwards; }
+.cs-back { animation: csBack 380ms var(--ease-out) backwards; }
+.say-in { animation: sayIn 700ms var(--ease-splash) backwards; }
+.bub-in { animation: bubIn 500ms var(--ease-splash) backwards; }
+.bell-ring { display: inline-block; animation: bellw 1.6s ease-in-out infinite; transform-origin: 50% 0; }
+.flash-bg { animation: flashBg 500ms ease; }
+.caret { display: inline-block; width: 3px; height: 0.8em; margin-left: 4px; border-radius: 2px; background: var(--blue); align-self: center; animation: blinkc 1s steps(1) infinite; }
+.grain { position: absolute; inset: 0; z-index: 0; opacity: 0.22; mix-blend-mode: overlay; pointer-events: none; background-image: var(--grain); }
+
+/* Pages slide or fade in, as the prototype's screens do. "backwards" leaves no transform
+   behind once done, so pinned footers inside still pin to the screen. */
+.enter-fwd { animation: inR 320ms var(--ease-out) backwards; }
+.enter-back { animation: inL 320ms var(--ease-out) backwards; }
+.enter-up { animation: inUp 380ms var(--ease-out) backwards; }
+.enter-fade { animation: inFade 260ms var(--ease-out) backwards; }
+
+/* Serif headline, second line in cyan, each line rising in turn */
+.say { font-family: var(--font-serif); font-style: italic; font-weight: 400; line-height: 0.98; letter-spacing: -0.01em; }
+.say > span { display: block; }
+.say .l2 { color: var(--cyan); }
+.say.say-anim > span { opacity: 0; animation: sayIn 700ms var(--ease-splash) forwards; }
+.say.say-anim > span:nth-child(1) { animation-delay: 0.35s; }
+.say.say-anim > span:nth-child(2) { animation-delay: 0.5s; }
+
+/* ---------- buttons: a ripple from where you press ---------- */
+.btn { position: relative; overflow: hidden; isolation: isolate; transition: transform 100ms var(--ease-out), box-shadow 100ms var(--ease-out), background 150ms, color 150ms, opacity 150ms; }
+.brip { position: absolute; z-index: -1; border-radius: 50%; background: currentColor; opacity: 0.25; transform: scale(0); pointer-events: none; animation: brip 600ms var(--ease-out) forwards; }
+.icon-btn { transition: background 150ms, transform 100ms var(--ease-out); }
+.icon-btn:active { transform: scale(0.92); }
+.toggle { transition: background 150ms; }
+.toggle::after { transition: transform 220ms var(--ease-splash); }
+.chip { transition: background 150ms, border-color 150ms, color 150ms; }
+.chip[aria-pressed="true"] { animation: okpop 400ms var(--ease-splash); }
+
+/* A row that just arrived slides in on a cyan wash */
+.row-fresh { animation: rowIn 700ms var(--ease-splash); }
+
+/* Bars fill from empty when they appear */
+.fill-bar > i { animation: growW 900ms var(--ease-out) both; transition: width 900ms var(--ease-out); }
+.progress > i { transition: width 600ms var(--ease-splash); }
+
+/* "Active" dot breathes */
+.pill-dot::before { --live: rgba(18, 183, 106, 0.5); animation: live 1.6s infinite; }
+
+/* Notices that want attention pulse gently */
+.banner-green.attn { animation: attn 2.4s ease-in-out infinite; }
+.banner-blue.attn { animation: attn2 2.4s ease-in-out infinite; }
+.banner-amber.attn { animation: attn3 2.4s ease-in-out infinite; }
+
+/* Payment method buttons press down */
+.method { transition: transform 100ms var(--ease-out), border-color 150ms, background 150ms; }
+.method:not(:disabled):active { transform: translateY(2px); }
+
+/* Copy boxes pop green when copied */
+.copy-box { transition: border-color 150ms; }
+.copy-box.copied { border-style: solid !important; border-color: var(--green) !important; animation: okpop 400ms var(--ease-splash); }
+
+/* ---------- segmented control with a sliding thumb ---------- */
+.segmented { position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+.segmented .seg-thumb { position: absolute; top: 4px; bottom: 4px; left: 4px; border-radius: 10px; background: var(--white); box-shadow: 0 2px 6px rgba(10, 20, 48, 0.08); transition: transform 320ms var(--ease-splash); }
+.segmented button { position: relative; z-index: 1; transition: color 150ms; }
+.segmented button[aria-selected="true"] { background: transparent; box-shadow: none; }
+
+/* ---------- overlays ---------- */
+.overlay { animation: fade-in 320ms ease both; }
+.overlay.is-closing { animation: outFade 200ms ease both; }
+.dialog { animation: dialogIn 320ms var(--ease-splash) both; }
+.overlay.is-closing .dialog { animation: dialogOut 200ms ease both; }
+.toast { animation: toastIn 320ms var(--ease-splash) both; }
+.toast.is-leaving { animation: toastOut 320ms var(--ease-out) both; }
+
+/* ---------- Drip ---------- */
+.drip { display: block; overflow: visible; }
+.drip .bd { transform-box: fill-box; transform-origin: 50% 100%; animation: dbob 3s ease-in-out infinite; }
+.drip .lid { transform-box: fill-box; transform-origin: 50% 0; transform: scaleY(0); animation: blink 4.6s infinite; }
+.drip.jump .bd { animation: djump 800ms var(--ease-splash) infinite; }
+.drip.wiggle .bd { animation: dwig 1.2s ease-in-out infinite; }
+.drip.pop { animation: dpop 700ms var(--ease-splash) both; }
+
+/* ---------- drifting waves ---------- */
+.sea { position: absolute; left: 0; right: 0; bottom: 0; height: var(--sea-h, 110px); pointer-events: none; overflow: hidden; }
+.sea svg { position: absolute; left: 0; bottom: 0; width: 200%; max-width: none; height: var(--sea-wave, 80px); }
+.sea .w1 { fill: var(--cyan); bottom: var(--sea-lift, 22px); opacity: var(--sea-o1, 1); animation: drift var(--sea-t1, 12s) linear infinite; }
+.sea .w2 { fill: var(--navy); animation: drift var(--sea-t2, 8s) linear infinite reverse; }
+
+/* ---------- the water tank ---------- */
+.wt { position: relative; overflow: hidden; isolation: isolate; border: 2px solid var(--line); border-radius: 24px; background: var(--blue-50); transition: border-color 300ms; }
+.wt.met { border-color: var(--green); }
+.wt-water { position: absolute; left: 0; right: 0; bottom: 0; background: var(--water-deep); transition: height 1100ms var(--ease-out); }
+.wt.drain .wt-water { transition: height 1600ms var(--ease-out); }
+.wt.refunded .wt-water { background: linear-gradient(180deg, #a6e3f7 0%, #9fb3ea 70%, #92abec 100%); }
+.wt-waves { position: absolute; left: 0; right: 0; top: -15px; height: 16px; overflow: hidden; }
+.wt-waves svg { position: absolute; left: 0; bottom: 0; width: 200%; height: 16px; max-width: none; }
+.wt-waves .w1 { fill: var(--cyan); animation: drift 4s linear infinite; }
+.wt-waves .w2 { fill: var(--cyan); opacity: 0.45; bottom: 4px; animation: drift 6.5s linear infinite reverse; }
+.wt-bubs { position: absolute; inset: 0; overflow: hidden; }
+.wt-bub { position: absolute; bottom: -12px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, 0.55); background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.5), transparent 65%); animation: bub linear infinite; }
+.wt-ride { position: absolute; top: -30px; z-index: 2; width: 44px; height: auto; animation: bob 3.4s ease-in-out infinite; transition: opacity 300ms; }
+.wt-ride.r1 { left: 62%; }
+.wt-ride.r2 { left: 84%; width: 36px; animation-delay: -1.3s; }
+.wt.empty .wt-ride { opacity: 0; }
+.wt-text { position: absolute; left: 22px; bottom: 20px; z-index: 3; color: var(--white); }
+.wt-pct { font-family: var(--font-display); font-weight: 700; font-size: 56px; line-height: 1; letter-spacing: -2px; font-variant-numeric: tabular-nums; }
+.wt-line { font-family: var(--font-display); font-weight: 700; font-size: 16px; margin-top: 6px; }
+.wt-sub { font-size: 13px; opacity: 0.9; }
+.wt-gm { position: absolute; right: 14px; bottom: 14px; z-index: 3; opacity: 0; transform: scale(0.5); transition: opacity 220ms, transform 700ms var(--ease-splash); }
+.wt.met .wt-gm { opacity: 1; transform: none; }
+.wt-drop { position: absolute; top: -40px; z-index: 4; width: 26px; pointer-events: none; }
+.wt-rip { position: absolute; z-index: 4; width: 60px; height: 16px; margin: -8px 0 0 -30px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.9); pointer-events: none; animation: ripo 700ms ease-out forwards; }
+.wt-plus { position: absolute; z-index: 5; padding: 4px 10px; border-radius: 999px; background: var(--white); color: var(--blue); font-family: var(--font-display); font-weight: 600; font-size: 12px; white-space: nowrap; box-shadow: var(--shadow-raised); pointer-events: none; }
+
+/* A small tank that fills while a pool is being made */
+.mini-tank { position: relative; width: 150px; height: 180px; margin: 0 auto; overflow: hidden; border: 3px solid var(--line); border-radius: 24px; background: var(--white); }
+.mini-tank > i { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: var(--water-deep); animation: mfill 1.6s var(--ease-inout) forwards; }
+
+/* ---------- waiting rings and the tick that draws itself ---------- */
+.ripw { position: relative; width: var(--ripw, 140px); height: var(--ripw, 140px); margin: 0 auto; }
+.ripw .ring { position: absolute; inset: 0; border-radius: 50%; border: 3px solid var(--cyan); opacity: 0; animation: ringo 1.6s var(--ease-out) infinite; }
+.ripw .ring:nth-child(2) { animation-delay: 0.4s; }
+.ripw .ring:nth-child(3) { animation-delay: 0.8s; }
+.ripw .okdot { position: absolute; inset: 21%; display: grid; place-items: center; border-radius: 50%; background: var(--green); color: var(--white); animation: dpop 700ms var(--ease-splash) both; }
+.ripw .okdot svg { width: 55%; height: 55%; }
+.ripw .okdot path { stroke-dasharray: 30; stroke-dashoffset: 30; animation: draw 500ms var(--ease-out) 0.35s forwards; }
+.tick-pop { animation: dpop 600ms var(--ease-splash) both; }
+.draw-tick path { stroke-dasharray: 30; stroke-dashoffset: 30; animation: draw 500ms var(--ease-out) 0.35s forwards; }
+
+/* ---------- timeline with a live step ---------- */
+.timeline { position: relative; padding-left: 28px; }
+.timeline::before { content: ""; position: absolute; left: 10px; top: 8px; bottom: 8px; width: 2px; background: var(--line); }
+.tl { position: relative; padding: 8px 0; }
+.tl::before { content: ""; position: absolute; left: -24px; top: 12px; width: 14px; height: 14px; border-radius: 50%; background: var(--white); border: 3px solid var(--line); box-sizing: border-box; transition: background 300ms, border-color 300ms; }
+.tl.done::before { background: var(--blue); border-color: var(--blue); }
+.tl.now::before { border-color: var(--blue); animation: live 1.6s infinite; }
+.tl b { display: block; font-weight: 500; font-size: 15px; line-height: 1.3; }
+.tl span { display: block; font-size: 13px; color: var(--slate); }
+
+/* ---------- approvals ---------- */
+.tracker { display: flex; gap: 6px; }
+.tracker i { position: relative; flex: 1; height: 10px; overflow: hidden; border-radius: 999px; background: var(--line); }
+.tracker i::after { content: ""; position: absolute; inset: 0; width: 0; background: var(--green); transition: width 600ms var(--ease-splash); }
+.tracker i.f::after { width: 100%; }
+.appr { transition: border-color 300ms, background 300ms, opacity 300ms; }
+.appr.ok { border-color: var(--green) !important; background: #f1fbf6 !important; }
+.appr .kicon { transition: transform 700ms var(--ease-splash), background 300ms, color 300ms; }
+.appr.ok .kicon { background: var(--green) !important; color: var(--white) !important; transform: rotate(90deg); }
+.hold .core { transition: transform 150ms, box-shadow 150ms, background 300ms; }
+.hold .core svg { transition: transform 700ms var(--ease-splash); }
+.hold.down .core { transform: translateY(3px) scale(0.96); }
+.hold.done .core { background: var(--green) !important; }
+.hold.done .core svg { transform: rotate(90deg); }
+
+/* ---------- confetti, coins and the paper plane ---------- */
+.fx { position: fixed; inset: 0; z-index: 95; overflow: hidden; pointer-events: none; }
+.fx-cf { position: absolute; width: 9px; height: 13px; border-radius: 2px; }
+.fx-coin { position: absolute; width: 26px; height: auto; }
+.fx-plane { position: absolute; font-size: 30px; }
+
+/* ---------- full-screen celebration ---------- */
+.cele { position: fixed; inset: 0; z-index: 90; display: flex; flex-direction: column; overflow: hidden; isolation: isolate; background: var(--blue); color: var(--white); animation: celeIn 420ms var(--ease-out) both; }
+.cele.out { animation: outFade 260ms ease both; }
+.cele-rays { position: absolute; left: 50%; top: 32%; z-index: -1; width: 900px; height: 900px; margin: -450px; border-radius: 50%; background: repeating-conic-gradient(rgba(255, 255, 255, 0.07) 0 10deg, transparent 10deg 20deg); animation: rays 18s linear infinite; -webkit-mask-image: radial-gradient(circle, #000 0, transparent 60%); mask-image: radial-gradient(circle, #000 0, transparent 60%); }
+.cele-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding: 60px 24px 20px; text-align: center; }
+.cele .say { font-size: 68px; margin-top: 18px; }
+.cele-k { margin-top: 22px; font-family: var(--font-display); font-weight: 500; font-size: 14px; opacity: 0.9; }
+.cele-v { font-family: var(--font-display); font-weight: 700; font-size: 56px; letter-spacing: -0.04em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.cele-v .unit { font-size: 0.45em; }
+.cele-s { max-width: 34ch; margin-top: 6px; font-size: 14px; opacity: 0.85; }
+.cele-pills { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 16px; }
+.cele-pill { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); font-family: var(--font-display); font-weight: 600; font-size: 13.5px; animation: sayIn 600ms var(--ease-splash) both; }
+.cele-foot { display: grid; gap: 10px; width: min(440px, 100%); margin: 0 auto; padding: 12px 20px 150px; }
+.cele-foot .btn { width: 100%; }
+.cele-foot .btn-ghost { height: 52px; color: var(--white); }
+
+/* ---------- badge unlocked ---------- */
+.ach-wrap { position: fixed; inset: 0; z-index: 96; display: grid; place-items: center; padding: 20px; background: rgba(11, 21, 48, 0.45); animation: fade-in 200ms ease both; }
+.ach { width: min(400px, 100%); padding: 26px 20px 20px; border-radius: 24px; background: var(--white); color: var(--ink); text-align: center; box-shadow: 0 30px 60px -20px rgba(3, 24, 94, 0.6); animation: achIn 700ms var(--ease-splash) both; }
+.ach-medal { position: relative; display: grid; place-items: center; width: 96px; height: 96px; margin: 0 auto; overflow: hidden; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fffbf1, var(--sand) 55%, #d6b97e); box-shadow: 0 6px 0 #c9a45c, inset 0 0 0 6px rgba(201, 164, 92, 0.5); font-size: 46px; animation: medal 1.2s var(--ease-splash) 0.2s both; }
+.ach-medal::after { content: ""; position: absolute; top: -50%; left: -80%; width: 50%; height: 200%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.8), transparent); transform: rotate(25deg); animation: shine 1.6s ease 0.9s; }
+.ach-k { margin-top: 16px; font-family: var(--font-display); font-weight: 600; font-size: 13px; color: var(--blue); }
+.ach h3 { margin-top: 2px; font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.02em; }
+.ach p { margin-top: 6px; font-size: 14px; color: var(--slate); }
+.ach .btn { width: 100%; margin-top: 18px; }
+
+/* ---------- splash: the pool fills, the logo splashes in ---------- */
+.splash { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; overflow: hidden; background: var(--blue); color: var(--white); cursor: pointer; }
+.splash.out { animation: outFade 260ms ease both; }
+html[data-splash="off"] .splash { display: none; }
+.splash-water { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: var(--water-deep); animation: sfill 1.4s var(--ease-inout) 0.2s forwards; }
+.splash-water::before { content: ""; position: absolute; left: 0; right: 0; top: -20px; height: 22px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='22' viewBox='0 0 160 22'%3E%3Cpath d='M0 11 Q20 0 40 11 T80 11 T120 11 T160 11 V22 H0Z' fill='%2321BCEE'/%3E%3C/svg%3E") repeat-x 0 0 / 160px 22px; animation: wx 1.2s linear infinite; }
+.splash-logo { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 14px; font-family: var(--font-display); font-weight: 700; font-size: 34px; letter-spacing: -0.01em; }
+.splash-logo svg { width: 96px; height: 96px; animation: lgIn 900ms var(--ease-splash) both; }
+.splash-logo span { animation: sayIn 700ms var(--ease-splash) 0.35s both; }
+
+/* ---------- floating coins around Drip ---------- */
+.coin-bob { position: absolute; height: auto; animation: bob 4s ease-in-out infinite; }
+
+/* ---------- rotating story lines on the blue panel ---------- */
+.story { position: relative; min-height: 230px; }
+.story-line { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: flex-end; opacity: 0; transform: translateY(16px); transition: opacity 220ms, transform 420ms var(--ease-out); }
+.story-line.on { opacity: 1; transform: none; transition-delay: 240ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; transition-delay: 0s !important; }
+  .splash { display: none; }
+}

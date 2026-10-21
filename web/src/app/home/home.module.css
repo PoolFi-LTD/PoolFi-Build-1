@@ -1,0 +1,38 @@
+.header { display: flex; align-items: flex-start; gap: 12px; }
+.header > div:first-child { flex: 1; }
+.date { color: var(--slate); margin-top: 6px; }
+
+.balance { position: relative; isolation: isolate; overflow: hidden; padding: 26px; border-radius: 28px; background: var(--balance); box-shadow: var(--shadow-balance); color: var(--white); }
+.balanceTop { display: flex; align-items: flex-start; gap: 12px; }
+.balanceTop > div:first-child { flex: 1; }
+.glassPill { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); font-family: var(--font-display); font-weight: 500; font-size: 15px; }
+.glassPill svg { width: 18px; height: 18px; }
+.balanceAmount { margin-top: 14px; font-family: var(--font-display); font-weight: 700; font-size: 56px; line-height: 1.05; letter-spacing: -2px; }
+.balanceSub { margin-top: 10px; font-size: 14px; opacity: 0.9; }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 22px; }
+
+.alerts { display: grid; gap: 10px; }
+
+.columns { display: grid; grid-template-columns: 1.08fr 0.92fr; gap: 20px; align-items: start; }
+.panel { padding: 18px; border-radius: 24px; background: var(--bg); }
+.panelHead { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 14px; }
+.viewAll { display: inline-flex; align-items: center; gap: 6px; color: var(--blue); font-family: var(--font-display); font-weight: 500; font-size: 15px; }
+.list { display: grid; gap: 10px; }
+
+/* ---------- phones ---------- */
+@media (max-width: 899px) {
+  .header { align-items: center; gap: 10px; }
+  .greet { font-size: 22px; line-height: 1.25; letter-spacing: -0.3px; }
+  .date { margin-top: 2px; font-size: 13px; }
+  .balance { padding: 20px; border-radius: 26px; }
+  .balanceTop { flex-wrap: wrap; gap: 10px; }
+  .balanceTop > div:first-child { flex: 1 1 100%; margin-bottom: 4px; }
+  .balanceTop > :global(.btn) { flex: 1; padding: 0 16px; }
+  .glassPill { height: 33px; font-size: 16px; }
+  .balanceAmount { margin-top: 14px; font-size: 36px; letter-spacing: -2px; }
+  .balanceSub { margin-top: 6px; font-size: 13px; opacity: 0.88; }
+  .tiles { grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .columns { grid-template-columns: 1fr; gap: 16px; }
+  .panel { padding: 14px 12px 12px; border-radius: 24px; }
+  .panelHead { padding: 0 4px 10px; }
+}

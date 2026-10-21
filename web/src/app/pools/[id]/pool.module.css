@@ -1,0 +1,50 @@
+.headAside { display: flex; align-items: center; gap: 10px; }
+.countdown { display: inline-flex; align-items: center; height: 38px; padding: 0 16px; border-radius: 999px; background: var(--blue-50); color: var(--navy); font-family: var(--font-display); font-weight: 500; font-size: 15px; }
+
+.layout { display: grid; grid-template-columns: 334px 1fr; gap: 28px; align-items: start; }
+.left { display: grid; gap: 14px; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat { padding: 12px; border: 2px solid var(--line-soft); border-radius: 14px; background: var(--white); }
+.statValue { font-family: var(--font-display); font-weight: 700; font-size: 20px; letter-spacing: -0.4px; }
+.statLabel { color: var(--slate); font-size: 13px; }
+
+.right { display: grid; gap: 14px; min-width: 0; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.list { overflow: hidden; border-radius: 16px; max-height: 470px; overflow-y: auto; }
+.actions { display: flex; justify-content: flex-end; gap: 14px; margin-top: auto; padding-top: 10px; }
+
+.youPaid { display: flex; align-items: center; gap: 12px; padding: 13px 16px; border: 1px solid #abefc6; border-radius: 16px; background: var(--green-50); }
+.check { display: grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: 999px; background: var(--green); color: var(--white); }
+.check svg { width: 20px; height: 20px; }
+.youPaid b { font-family: var(--font-display); }
+.receiptLink { margin-left: auto; color: var(--blue); font-family: var(--font-display); font-weight: 600; }
+
+.narrow { display: grid; gap: 16px; width: min(466px, 100%); margin: 0 auto; }
+.refundCard { display: flex; gap: 14px; align-items: flex-start; padding: 16px; border: 1px solid var(--blue-200); border-radius: 18px; background: var(--blue-50); color: var(--navy); }
+.refundIcon { display: grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: 999px; background: var(--blue); color: var(--white); }
+.refundIcon svg { width: 20px; height: 20px; }
+.refundCard b { display: block; font-family: var(--font-display); font-size: 16px; }
+.refundCard p { font-size: 13px; }
+.twoButtons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.shareLink { display: grid; gap: 14px; justify-items: center; text-align: center; }
+.message { width: 100%; padding: 14px; border-radius: 14px; background: var(--bg); font-size: 14px; text-align: left; white-space: pre-wrap; }
+.headShare { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; background: none; color: var(--ink); cursor: pointer; }
+.headShare svg { width: 24px; height: 24px; }
+
+/* ---------- phones ---------- */
+@media (max-width: 899px) {
+  .layout { grid-template-columns: 1fr; gap: 14px; }
+  .left :global(.wt) { height: 230px !important; }
+  .stat { padding: 10px 12px; border: 0; background: var(--bg); }
+  .statLabel { font-size: 12px; }
+  .list { max-height: none; overflow: visible; background: var(--line-soft); }
+  .youPaid { padding: 12px 14px; border-color: #a6e9c8; background: #f1fbf6; color: var(--green-ink); }
+  .receiptLink { font-weight: 500; }
+
+  /* The main action pins to the bottom of the screen */
+  .actions { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; justify-content: stretch; gap: 10px; margin: 0; padding: 12px 20px calc(28px + env(safe-area-inset-bottom, 0px)); background: var(--white); }
+  .actions > * { flex: 1; }
+  .addDivers { flex: none !important; order: 2; width: 58px; padding: 0; }
+  .twoButtons { grid-template-columns: 1fr; }
+}

@@ -1,0 +1,121 @@
+import cors from "@fastify/cors";
+import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from "fastify";
+import { z } from "zod";
+import { createAuthenticator, type AuthUser } from "./auth.js";
+import type { Config } from "./config.js";
+import type { Db } from "./db.js";
+import { ApiError } from "./errors.js";
+import { formatUsdc, isUsdcAmount, parseUsdc } from "./money.js";
+import { createServices, type Services } from "./services/index.js";
+import { ContributeInput, CreatePoolInput, JoinPoolInput } from "./services/pools.js";
+import type { Chain } from "./stellar/chain.js";
+
+export interface AppDeps {
+  config: Config;
+  db: Db;
+  chain: Chain;
+}
+
+const DepositInput = z.object({
+  amount: z.string().refine(isUsdcAmount, "must be a USDC amount, e.g. 50 or 12.5"),
+});
+
+function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
+  const result = schema.safeParse(value ?? {});
+  if (!result.success) {
+    throw new ApiError(400, "invalid_request", "Some of the request is missing or invalid.", z.flattenError(result.error));
+  }
+  return result.data;
+}
+
+export async function buildApp({ config, db, chain }: AppDeps): Promise<{ app: FastifyInstance; services: Services }> {
+  const app = Fastify({
+    logger: { level: config.logLevel, redact: ["req.headers.authorization"] },
+    bodyLimit: 64 * 1024,
+  });
+  await app.register(cors, { origin: config.corsOrigins.length > 0 ? config.corsOrigins : false });
+
+  const authenticate = createAuthenticator(config.auth);
+  const services = createServices({ config, db, chain }, app.log);
+  const { wallets, deposits, pools } = services;
+
+  const signedIn = (request: FastifyRequest): Promise<AuthUser> => authenticate(request.headers.authorization);
+  const maybeSignedIn = (request: FastifyRequest): Promise<AuthUser | null> =>
+    request.headers.authorization ? signedIn(request) : Promise.resolve(null);
+
+  app.setErrorHandler((error: FastifyError, request, reply) => {
+    if (error instanceof ApiError) {
+      return reply.status(error.status).send({ error: { code: error.code, message: error.message, details: error.details } });
+    }
+    if (error.statusCode && error.statusCode < 500) {
+      return reply.status(error.statusCode).send({ error: { code: "bad_request", message: error.message } });
+    }
+    request.log.error(error);
+    return reply.status(500).send({ error: { code: "internal_error", message: "Something went wrong. Try again." } });
+  });
+  app.setNotFoundHandler((_request, reply) =>
+    reply.status(404).send({ error: { code: "not_found", message: "No such endpoint." } }),
+  );
+
+  app.get("/health", async () => {
+    await db.query("select 1");
+    const ledger = await chain.rpc.getLatestLedger();
+    return {
+      status: "ok",
+      network: config.stellar.networkPassphrase,
+      latestLedger: ledger.sequence,
+      poolContractId: chain.poolContractId,
+      usdcContractId: chain.usdcContractId,
+    };
+  });
+
+  // The signed-in user. Their wallet is created on their first call to any signed-in endpoint.
+  app.get("/v1/me", async (request) => {
+    const user = await signedIn(request);
+    const wallet = await wallets.ensureUser(user);
+    return { id: user.id, email: user.email, wallet: { address: wallet.address, activated: wallet.activated } };
+  });
+
+  app.get("/v1/wallet", async (request) => {
+    const wallet = await wallets.ensureUser(await signedIn(request));
+    const balance = (await chain.usdcBalance(wallet.address)) ?? 0n;
+    return { address: wallet.address, activated: wallet.activated, usdcBalance: formatUsdc(balance) };
+  });
+
+  app.post("/v1/wallet/deposits", async (request, reply) => {
+    const user = await signedIn(request);
+    const { amount } = parse(DepositInput, request.body);
+    const deposit = await deposits.deposit(user, parseUsdc(amount));
+    const address = await wallets.address(user.id);
+    const balance = address ? ((await chain.usdcBalance(address)) ?? 0n) : 0n;
+    return reply.status(201).send({ deposit, usdcBalance: formatUsdc(balance) });
+  });
+
+  app.post("/v1/pools", async (request, reply) => {
+    const user = await signedIn(request);
+    const pool = await pools.create(user, parse(CreatePoolInput, request.body));
+    return reply.status(201).send({ pool });
+  });
+
+  app.get<{ Params: { poolId: string } }>("/v1/pools/:poolId", async (request) => {
+    return { pool: await pools.get(request.params.poolId, await maybeSignedIn(request)) };
+  });
+
+  app.post<{ Params: { poolId: string } }>("/v1/pools/:poolId/join", async (request) => {
+    const user = await signedIn(request);
+    return { pool: await pools.join(user, request.params.poolId, parse(JoinPoolInput, request.body)) };
+  });
+
+  app.post<{ Params: { poolId: string } }>("/v1/pools/:poolId/contributions", async (request, reply) => {
+    const user = await signedIn(request);
+    const result = await pools.contribute(user, request.params.poolId, parse(ContributeInput, request.body));
+    return reply.status(201).send(result);
+  });
+
+  // The pool admin takes the pool's USDC into their wallet once the goal is met.
+  app.post<{ Params: { poolId: string } }>("/v1/pools/:poolId/withdraw", async (request) => {
+    return pools.withdraw(await signedIn(request), request.params.poolId);
+  });
+
+  return { app, services };
+}

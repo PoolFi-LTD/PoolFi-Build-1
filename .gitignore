@@ -7,3 +7,8 @@ target
 
 # Agent instructions (local only)
 AGENTS.md
+
+# Server
+server/node_modules
+server/.env
+server/.local

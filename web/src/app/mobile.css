@@ -1,0 +1,72 @@
+/* Phone layout (the Figma "Mobile" page): below 900px wide. Page-specific rules live in each page's module. */
+
+/* Layout grids that collapse on phones */
+.grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 14px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.grid-side { display: grid; grid-template-columns: 334px 1fr; gap: 24px; align-items: start; }
+.w-540 { width: min(540px, 100%); }
+
+/* Things that only show on one size */
+@media (min-width: 900px) {
+  .hide-d { display: none !important; }
+}
+
+@media (max-width: 899px) {
+  .hide-m { display: none !important; }
+
+  .grid-cards { grid-template-columns: 1fr; gap: 10px; }
+  .grid-4 { grid-template-columns: 1fr 1fr; }
+  .grid-3 { grid-template-columns: 1fr; }
+  .grid-side { grid-template-columns: 1fr; gap: 16px; }
+  .table-scroll { overflow-x: auto !important; }
+  .table-scroll table { min-width: 560px; }
+
+  .t-h1 { font-size: 26px; letter-spacing: -0.8px; }
+  .t-amount-xl { font-size: 42px; letter-spacing: -2px; }
+
+  /* Modals become bottom sheets that rise from the bottom */
+  .overlay { place-items: end stretch; padding: 0; }
+  .dialog,
+  .dialog-wide {
+    width: 100%;
+    max-height: 90vh;
+    padding: 10px 20px calc(28px + env(safe-area-inset-bottom, 0px));
+    border-radius: 24px 24px 0 0;
+    animation: sheetIn 320ms var(--ease-out) both;
+  }
+  .dialog::before { content: ""; display: block; width: 40px; height: 5px; margin: 0 auto 16px; border-radius: 999px; background: var(--line); }
+  .overlay.is-closing .dialog { animation: sheetOut 220ms var(--ease-out) both; }
+  .dialog-close { display: none; }
+
+  /* The toast drops in from the top, clear of the tab bar */
+  .toast { top: calc(16px + env(safe-area-inset-top, 0px)); bottom: auto; left: 16px; right: 16px; transform: none; justify-content: flex-start; border-radius: 16px; font-size: 14.5px; animation: toastDown 320ms var(--ease-splash) both; }
+  .toast.is-leaving { animation: toastUp 320ms var(--ease-out) both; }
+
+  /* Lists and cards */
+  .kv { padding: 4px 16px; border: 0; border-radius: 16px; background: var(--bg); }
+  .kv dt { font-size: 13px; }
+  .kv dd { font-weight: 500; font-size: 16px; }
+  .banner { padding: 14px 16px; border-radius: 18px; }
+  .banner .banner-rest { display: none; }
+  .segmented { display: grid; width: 100%; }
+  .segmented button { min-width: 0; padding: 0 8px; }
+  .state { padding: 32px 12px; }
+
+  /* Celebrations, sized for a phone */
+  .cele-body { justify-content: center; padding: 60px 24px 10px; }
+  .cele .say { font-size: 44px; }
+  .cele-v { font-size: 44px; }
+  .cele-foot { padding: 12px 20px calc(30px + env(safe-area-inset-bottom, 0px)); }
+  .ach { width: 100%; }
+
+  /* A button pinned to the bottom of a pushed screen */
+  .phone-foot { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: flex; gap: 10px; padding: 12px 20px calc(28px + env(safe-area-inset-bottom, 0px)); background: var(--white); }
+  .phone-foot > * { flex: 1; }
+  .phone-foot > .square { flex: none; width: 58px; padding: 0; }
+}
+
+@keyframes sheetIn { from { transform: translateY(100%); } }
+@keyframes sheetOut { to { transform: translateY(100%); } }
+@keyframes toastDown { from { transform: translateY(calc(-100% - 80px)); } }
+@keyframes toastUp { to { transform: translateY(calc(-100% - 80px)); } }

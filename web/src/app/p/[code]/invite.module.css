@@ -1,0 +1,36 @@
+.column { display: grid; gap: 16px; width: min(382px, 100%); padding-bottom: 24px; }
+.lifeguardAvatar { width: 60px; height: 60px; }
+.invitedBy { opacity: 0.85; }
+.poolTitle { display: flex; align-items: center; gap: 12px; font-family: var(--font-display); font-weight: 700; font-size: 34px; letter-spacing: -0.8px; line-height: 1.15; }
+.share { display: grid; justify-items: center; gap: 10px; padding: 20px; border-radius: 20px; background: var(--white); text-align: center; }
+.shareAmount { font-family: var(--font-display); font-weight: 700; font-size: 44px; letter-spacing: -1.6px; line-height: 1; }
+.closes { padding: 6px 14px; border-radius: 999px; background: var(--blue-50); color: var(--navy); font-family: var(--font-display); font-weight: 500; font-size: 14px; }
+.find { display: grid; gap: 10px; padding: 18px; border-radius: 20px; background: var(--white); }
+.notOnList { justify-self: start; padding: 0; border: 0; background: none; color: var(--blue); font-family: var(--font-display); font-weight: 500; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.trust { display: grid; gap: 10px; }
+.trustRow { display: flex; align-items: center; gap: 12px; font-size: 14px; }
+.trustIcon { display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 10px; background: var(--white); color: var(--slate); }
+.trustIcon svg { width: 18px; height: 18px; }
+.payNote { text-align: center; color: var(--slate); font-size: 13px; }
+.closed { padding: 16px; border-radius: 16px; background: var(--white); text-align: center; }
+.rows { display: grid; gap: 0; padding: 4px 14px; border-radius: 16px; background: var(--bg); }
+.rows > div { display: flex; justify-content: space-between; padding: 10px 0; font-size: 14px; }
+.rows > div + div { border-top: 1px dashed var(--line); }
+.rows span:first-child { color: var(--slate); }
+.rows span:last-child { font-family: var(--font-display); font-weight: 600; }
+.bigCoin { display: grid; justify-items: center; gap: 4px; text-align: center; }
+.payFoot { display: grid; gap: 10px; }
+
+/* ---------- phones ---------- */
+@media (max-width: 899px) {
+  .column { width: 100%; gap: 12px; padding-bottom: 130px; }
+  .invitedBy { font-size: 13px; opacity: 0.9; }
+  .poolTitle { justify-content: center; font-size: 26px; gap: 8px; }
+  .share { gap: 4px; padding: 16px 0; box-shadow: var(--shadow-raised); }
+  .shareAmount { font-size: 42px; letter-spacing: -2px; }
+  .find { padding: 14px; gap: 8px; }
+  .find :global(.field-label) { display: none; }
+  .find :global(.t-h2) { font-family: var(--font-display); font-weight: 500; font-size: 16px !important; }
+  .payFoot { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; gap: 8px; padding: 12px 16px calc(24px + env(safe-area-inset-bottom, 0px)); background: var(--bg); }
+  .payNote { font-size: 12px; }
+}

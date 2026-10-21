@@ -1,0 +1,55 @@
+.column { display: flex; flex-direction: column; width: min(366px, 100%); min-height: calc(100vh - 80px); }
+.top { display: flex; align-items: center; gap: 14px; margin-bottom: 44px; }
+.top :global(.progress) { flex: 1; }
+.back { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; background: none; color: var(--slate); cursor: pointer; }
+.back:hover { color: var(--ink); }
+.speech { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.bubble { flex: 1; padding: 12px 14px; border: 2px solid var(--line-soft); border-radius: 16px; font-size: 14px; }
+.title { font-family: var(--font-display); font-weight: 700; font-size: 26px; line-height: 1.2; letter-spacing: -0.5px; }
+.sub { margin: 14px 0 22px; color: var(--slate); }
+.phoneRow { display: flex; gap: 8px; align-items: flex-end; }
+.country { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 56px; padding: 0 14px; border: 2px solid var(--line); border-radius: 14px; background: var(--white); font-family: var(--font-display); font-weight: 500; }
+.link { padding: 0; border: 0; background: none; color: var(--blue); font-family: var(--font-display); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.terms { margin-top: 18px; color: var(--slate); font-size: 12px; }
+.footer { margin-top: auto; padding-top: 24px; }
+
+/* 6-digit code */
+.boxes { display: flex; gap: 8px; margin: 22px 0 14px; }
+.box { width: 52px; height: 58px; border: 2px solid var(--line); border-radius: 14px; background: var(--white); text-align: center; font-family: var(--font-display); font-weight: 700; font-size: 24px; color: var(--ink); outline: none; transition: border-color 150ms ease, background 200ms ease; }
+.box:focus { border-color: var(--blue); }
+.filled { border-color: var(--blue-200); }
+/* Right code: the boxes turn green and the row swells once. Wrong: the row shakes. */
+.verified { animation: otpok 600ms var(--ease-splash); }
+.verified .box { border-color: var(--green); background: var(--green-50); color: var(--green-ink); transition: background 300ms, border-color 300ms; }
+.wrong { animation: shake 380ms linear; }
+.wrong .box { border-color: var(--red-200); }
+.resend { color: var(--slate); font-size: 13px; }
+
+/* Profile */
+.avatarBig { display: grid; place-items: center; width: 88px; height: 88px; margin: 0 auto 16px; border-radius: 999px; font-size: 44px; overflow: hidden; }
+.avatarBig img { width: 100%; height: 100%; object-fit: cover; }
+.centered { text-align: center; }
+.looks { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 14px; }
+.look { display: grid; place-items: center; width: 46px; height: 46px; border: 2px solid transparent; border-radius: 999px; font-size: 22px; cursor: pointer; transition: transform 300ms var(--ease-splash), border-color 150ms; }
+.lookOn { border-color: var(--blue); transform: scale(1.12); }
+.photo { border: 1.75px dashed var(--slate); background: var(--white); color: var(--blue); font-family: var(--font-display); font-size: 10px; gap: 0; }
+.photo svg { width: 16px; height: 16px; }
+
+/* Welcome */
+.welcome { display: grid; place-items: center; align-content: center; gap: 16px; min-height: calc(100vh - 80px); width: min(316px, 100%); text-align: center; }
+
+@keyframes otpok { 40% { transform: scale(1.03); } }
+@keyframes shake { 20%, 60% { transform: translateX(-7px); } 40%, 80% { transform: translateX(7px); } }
+
+/* ---------- phones ---------- */
+@media (max-width: 899px) {
+  .column { width: 100%; min-height: 100vh; padding: 0 20px 110px; }
+  .top { margin: 0 -8px 20px; padding: 14px 0 8px; gap: 10px; }
+  .title { font-size: 26px; letter-spacing: -0.8px; }
+  .sub { margin: 10px 0 18px; font-size: 15px; }
+  .footer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; padding: 12px 20px calc(28px + env(safe-area-inset-bottom, 0px)); background: var(--white); }
+  .boxes { gap: 8px; }
+  .box { flex: 1; width: auto; min-width: 0; height: 58px; border-radius: 12px; }
+  .centered.title { font-size: 24px; }
+  .welcome { display: none; }
+}

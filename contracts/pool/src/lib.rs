@@ -3,9 +3,10 @@
 //! PoolFi pool contract.
 //!
 //! One deployment holds any number of USDC contribution pools. Each pool has
-//! its own admin wallet, goal and deadline. Members join and contribute USDC
-//! into the contract; the pool admin settles once the goal is met, otherwise
-//! members claim refunds. See `docs/contract-plan.md` for the design.
+//! its own admin wallet, goal, deadline and optional approvers. Members join
+//! and contribute USDC into the contract. Once the goal is met the pool admin is
+//! paid out (after a majority of approvers agree, if the pool has any), less the
+//! platform fee; otherwise members claim refunds. See `docs/contract-plan.md`.
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, token, Address, BytesN,
@@ -17,6 +18,10 @@ const INSTANCE_EXTEND_TO: u32 = 30 * DAY_IN_LEDGERS;
 const PERSISTENT_EXTEND_TO: u32 = 90 * DAY_IN_LEDGERS;
 /// Largest page `get_members` returns, to stay within per-transaction read limits.
 const MAX_PAGE_SIZE: u32 = 50;
+/// Most approvers a pool can have.
+const MAX_APPROVERS: u32 = 10;
+/// Highest platform fee, in basis points (10%).
+const MAX_FEE_BPS: u32 = 1_000;
 
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -44,6 +49,20 @@ pub struct Pool {
     pub member_count: u32,
     pub status: PoolStatus,
     pub created_at: u64,
+    /// Wallets that approve the payout; a majority must agree. Empty means the
+    /// pool admin is paid out alone. None on pools stored before approvers existed.
+    pub approvers: Option<Vec<Address>>,
+    /// Approvals of the pending payout request; None when no payout is requested.
+    pub payout_approvals: Option<Vec<Address>>,
+}
+
+/// The platform fee taken from every payout (never from refunds).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeConfig {
+    /// Basis points: 500 = 5%.
+    pub bps: u32,
+    pub recipient: Address,
 }
 
 #[contracttype]
@@ -61,26 +80,42 @@ pub struct Member {
 enum DataKey {
     Admin,
     Token,
+    Fee,
     NextPoolId,
     Pool(u64),
     Member(u64, Address),
     MemberAt(u64, u32),
 }
 
+/// Codes start at 100 so they can't be mistaken for the USDC token's own error
+/// codes (1–15), which surface through the same calls.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
-    PoolNotFound = 1,
-    InvalidAmount = 2,
-    InvalidDeadline = 3,
-    DeadlinePassed = 4,
-    PoolClosed = 5,
-    AlreadyMember = 6,
-    GoalNotReached = 7,
-    NotRefundable = 8,
-    NotMember = 9,
-    NothingToRefund = 10,
+    PoolNotFound = 100,
+    InvalidAmount = 101,
+    InvalidDeadline = 102,
+    DeadlinePassed = 103,
+    PoolClosed = 104,
+    AlreadyMember = 105,
+    GoalNotReached = 106,
+    NotRefundable = 107,
+    NotMember = 108,
+    NothingToRefund = 109,
+    /// The pool has approvers, so the payout must be requested and approved.
+    ApprovalRequired = 110,
+    /// The pool has no approvers; its admin settles directly.
+    NoApprovers = 111,
+    /// Too many approvers, a duplicate, or the pool admin among them.
+    InvalidApprovers = 112,
+    NotApprover = 113,
+    PayoutAlreadyRequested = 114,
+    NoPayoutRequest = 115,
+    AlreadyApproved = 116,
+    /// Contributions are paused while a payout waits for approval.
+    PayoutPending = 117,
+    InvalidFee = 118,
 }
 
 #[contractevent]
@@ -92,6 +127,7 @@ pub struct PoolCreated {
     pub admin: Address,
     pub goal_amount: i128,
     pub deadline: u64,
+    pub approvers: Vec<Address>,
 }
 
 #[contractevent]
@@ -130,7 +166,48 @@ pub struct PoolSettled {
     pub pool_id: u64,
     #[topic]
     pub admin: Address,
+    /// What the pool admin received.
     pub amount: i128,
+    /// What went to the fee recipient.
+    pub fee: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PayoutRequested {
+    #[topic]
+    pub pool_id: u64,
+    #[topic]
+    pub admin: Address,
+    pub amount: i128,
+    pub needed: u32,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PayoutApproved {
+    #[topic]
+    pub pool_id: u64,
+    #[topic]
+    pub approver: Address,
+    pub approvals: u32,
+    pub needed: u32,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PayoutDeclined {
+    #[topic]
+    pub pool_id: u64,
+    #[topic]
+    pub approver: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeChanged {
+    pub bps: u32,
+    pub recipient: Address,
 }
 
 #[contractevent]
@@ -162,22 +239,62 @@ pub struct PoolContract;
 
 #[contractimpl]
 impl PoolContract {
-    /// Runs once, atomically with the deploy. `token` is the USDC Stellar Asset Contract.
-    pub fn __constructor(env: Env, admin: Address, token: Address) {
+    /// Runs once, atomically with the deploy. `token` is the USDC Stellar Asset
+    /// Contract; `fee_bps` of every payout goes to `fee_recipient`.
+    pub fn __constructor(
+        env: Env,
+        admin: Address,
+        token: Address,
+        fee_bps: u32,
+        fee_recipient: Address,
+    ) -> Result<(), Error> {
+        if fee_bps > MAX_FEE_BPS {
+            return Err(Error::InvalidFee);
+        }
         let storage = env.storage().instance();
         storage.set(&DataKey::Admin, &admin);
         storage.set(&DataKey::Token, &token);
+        storage.set(
+            &DataKey::Fee,
+            &FeeConfig {
+                bps: fee_bps,
+                recipient: fee_recipient,
+            },
+        );
         storage.set(&DataKey::NextPoolId, &0u64);
         extend_instance(&env);
+        Ok(())
     }
 
+    /// A pool whose admin is paid out alone once the goal is met.
     pub fn create_pool(
         env: Env,
         admin: Address,
         goal_amount: i128,
         deadline: u64,
     ) -> Result<u64, Error> {
+        let approvers = Vec::new(&env);
+        Self::create_pool_with_approvers(env, admin, goal_amount, deadline, approvers)
+    }
+
+    /// A pool whose payout needs a majority of `approvers` to agree.
+    pub fn create_pool_with_approvers(
+        env: Env,
+        admin: Address,
+        goal_amount: i128,
+        deadline: u64,
+        approvers: Vec<Address>,
+    ) -> Result<u64, Error> {
         admin.require_auth();
+        if approvers.len() > MAX_APPROVERS {
+            return Err(Error::InvalidApprovers);
+        }
+        for (i, approver) in approvers.iter().enumerate() {
+            let repeated = approvers.iter().skip(i + 1).any(|other| other == approver);
+            if approver == admin || repeated {
+                return Err(Error::InvalidApprovers);
+            }
+        }
         if goal_amount <= 0 {
             return Err(Error::InvalidAmount);
         }
@@ -201,6 +318,8 @@ impl PoolContract {
             member_count: 0,
             status: PoolStatus::Open,
             created_at: now,
+            approvers: Some(approvers.clone()),
+            payout_approvals: None,
         };
         save_pool(&env, &pool);
         PoolCreated {
@@ -208,6 +327,7 @@ impl PoolContract {
             admin,
             goal_amount,
             deadline,
+            approvers,
         }
         .publish(&env);
         Ok(id)
@@ -234,6 +354,9 @@ impl PoolContract {
         }
         let mut pool = load_pool(&env, pool_id)?;
         ensure_accepting(&env, &pool)?;
+        if pool.payout_approvals.is_some() {
+            return Err(Error::PayoutPending);
+        }
 
         let mut record = match load_member(&env, pool_id, &member) {
             Some(record) => record,
@@ -269,29 +392,94 @@ impl PoolContract {
         Ok(())
     }
 
-    /// Pays the full pool balance to the pool admin. The pool must be Funded.
+    /// Pays a Funded pool without approvers to its admin, less the fee.
+    /// Returns what the admin received.
     pub fn settle(env: Env, pool_id: u64) -> Result<i128, Error> {
         let mut pool = load_pool(&env, pool_id)?;
         pool.admin.require_auth();
-        match effective_status(&env, &pool) {
-            PoolStatus::Funded => {}
-            PoolStatus::Open => return Err(Error::GoalNotReached),
-            PoolStatus::Settled | PoolStatus::Refunded => return Err(Error::PoolClosed),
+        ensure_funded(&env, &pool)?;
+        if !approvers_of(&env, &pool).is_empty() {
+            return Err(Error::ApprovalRequired);
         }
+        Ok(pay_out(&env, &mut pool))
+    }
 
-        let amount = pool.total_contributed;
-        pool.status = PoolStatus::Settled;
+    /// The pool admin asks the approvers to release a Funded pool's payout.
+    pub fn request_payout(env: Env, pool_id: u64) -> Result<(), Error> {
+        let mut pool = load_pool(&env, pool_id)?;
+        pool.admin.require_auth();
+        ensure_funded(&env, &pool)?;
+        let approvers = approvers_of(&env, &pool);
+        if approvers.is_empty() {
+            return Err(Error::NoApprovers);
+        }
+        if pool.payout_approvals.is_some() {
+            return Err(Error::PayoutAlreadyRequested);
+        }
+        pool.payout_approvals = Some(Vec::new(&env));
         save_pool(&env, &pool);
-
-        token_client(&env).transfer(&env.current_contract_address(), &pool.admin, &amount);
-
-        PoolSettled {
+        PayoutRequested {
             pool_id,
             admin: pool.admin,
-            amount,
+            amount: pool.total_contributed,
+            needed: needed_approvals(&approvers),
         }
         .publish(&env);
-        Ok(amount)
+        Ok(())
+    }
+
+    /// An approver agrees to the pending payout. Once a majority has, the pool
+    /// admin is paid out straight away. Returns whether that happened.
+    pub fn approve_payout(env: Env, pool_id: u64, approver: Address) -> Result<bool, Error> {
+        approver.require_auth();
+        let mut pool = load_pool(&env, pool_id)?;
+        ensure_funded(&env, &pool)?;
+        let approvers = approvers_of(&env, &pool);
+        if !approvers.contains(&approver) {
+            return Err(Error::NotApprover);
+        }
+        let mut approvals = pool
+            .payout_approvals
+            .clone()
+            .ok_or(Error::NoPayoutRequest)?;
+        if approvals.contains(&approver) {
+            return Err(Error::AlreadyApproved);
+        }
+        approvals.push_back(approver.clone());
+        let needed = needed_approvals(&approvers);
+        PayoutApproved {
+            pool_id,
+            approver,
+            approvals: approvals.len(),
+            needed,
+        }
+        .publish(&env);
+
+        if approvals.len() >= needed {
+            pay_out(&env, &mut pool);
+            return Ok(true);
+        }
+        pool.payout_approvals = Some(approvals);
+        save_pool(&env, &pool);
+        Ok(false)
+    }
+
+    /// An approver turns the pending payout down. The money stays in the pool
+    /// and contributions resume; the admin can request again.
+    pub fn decline_payout(env: Env, pool_id: u64, approver: Address) -> Result<(), Error> {
+        approver.require_auth();
+        let mut pool = load_pool(&env, pool_id)?;
+        ensure_funded(&env, &pool)?;
+        if !approvers_of(&env, &pool).contains(&approver) {
+            return Err(Error::NotApprover);
+        }
+        if pool.payout_approvals.is_none() {
+            return Err(Error::NoPayoutRequest);
+        }
+        pool.payout_approvals = None;
+        save_pool(&env, &pool);
+        PayoutDeclined { pool_id, approver }.publish(&env);
+        Ok(())
     }
 
     /// Closes an Open or Funded pool so members can claim refunds.
@@ -304,6 +492,7 @@ impl PoolContract {
         }
 
         pool.status = PoolStatus::Refunded;
+        pool.payout_approvals = None;
         save_pool(&env, &pool);
         PoolCancelled { pool_id }.publish(&env);
         Ok(())
@@ -393,6 +582,28 @@ impl PoolContract {
         env.storage().instance().get(&DataKey::Token).unwrap()
     }
 
+    /// The platform fee, or None if it was never set (contracts upgraded from v1).
+    pub fn fee(env: Env) -> Option<FeeConfig> {
+        read_fee(&env)
+    }
+
+    pub fn set_fee(env: Env, bps: u32, recipient: Address) -> Result<(), Error> {
+        read_admin(&env).require_auth();
+        if bps > MAX_FEE_BPS {
+            return Err(Error::InvalidFee);
+        }
+        env.storage().instance().set(
+            &DataKey::Fee,
+            &FeeConfig {
+                bps,
+                recipient: recipient.clone(),
+            },
+        );
+        extend_instance(&env);
+        FeeChanged { bps, recipient }.publish(&env);
+        Ok(())
+    }
+
     pub fn set_admin(env: Env, new_admin: Address) {
         let old_admin = read_admin(&env);
         old_admin.require_auth();
@@ -414,6 +625,57 @@ impl PoolContract {
 
 fn read_admin(env: &Env) -> Address {
     env.storage().instance().get(&DataKey::Admin).unwrap()
+}
+
+fn read_fee(env: &Env) -> Option<FeeConfig> {
+    env.storage().instance().get(&DataKey::Fee)
+}
+
+fn approvers_of(env: &Env, pool: &Pool) -> Vec<Address> {
+    pool.approvers.clone().unwrap_or_else(|| Vec::new(env))
+}
+
+/// A majority: 1 of 1, 2 of 2, 2 of 3, 3 of 4, ...
+fn needed_approvals(approvers: &Vec<Address>) -> u32 {
+    approvers.len() / 2 + 1
+}
+
+fn ensure_funded(env: &Env, pool: &Pool) -> Result<(), Error> {
+    match effective_status(env, pool) {
+        PoolStatus::Funded => Ok(()),
+        PoolStatus::Open => Err(Error::GoalNotReached),
+        PoolStatus::Settled | PoolStatus::Refunded => Err(Error::PoolClosed),
+    }
+}
+
+/// Sends a Funded pool's balance to its admin, less the platform fee, and
+/// closes it. Returns what the admin received.
+fn pay_out(env: &Env, pool: &mut Pool) -> i128 {
+    let total = pool.total_contributed;
+    let fee_config = read_fee(env).filter(|f| f.bps > 0);
+    let fee = fee_config
+        .as_ref()
+        .map_or(0, |f| total * i128::from(f.bps) / 10_000);
+    let amount = total - fee;
+    pool.status = PoolStatus::Settled;
+    pool.payout_approvals = None;
+    save_pool(env, pool);
+
+    let token = token_client(env);
+    let contract = env.current_contract_address();
+    token.transfer(&contract, &pool.admin, &amount);
+    if let Some(fee_config) = fee_config.filter(|_| fee > 0) {
+        token.transfer(&contract, &fee_config.recipient, &fee);
+    }
+
+    PoolSettled {
+        pool_id: pool.id,
+        admin: pool.admin.clone(),
+        amount,
+        fee,
+    }
+    .publish(env);
+    amount
 }
 
 fn token_client(env: &Env) -> token::TokenClient<'_> {
@@ -504,3 +766,5 @@ fn extend_persistent(env: &Env, key: &DataKey) {
 }
 
 mod test;
+mod test_approvals;
+mod test_security;

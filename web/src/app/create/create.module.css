@@ -1,0 +1,105 @@
+.grid { display: grid; grid-template-columns: minmax(0, 466px) 276px; justify-content: center; gap: 46px; }
+.title { display: flex; align-items: center; gap: 12px; font-family: var(--font-display); font-weight: 700; font-size: 26px; letter-spacing: -0.5px; }
+.lead { margin: 14px 0 22px; color: var(--slate); }
+
+/* Step 1: pool type */
+.types { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.type { display: flex; align-items: center; gap: 12px; height: 60px; padding: 0 12px; border: 2px solid var(--line); border-radius: 16px; background: var(--white); font-family: var(--font-display); font-weight: 500; font-size: 16px; text-align: left; cursor: pointer; box-shadow: 0 3px 0 var(--line); transition: transform 100ms var(--ease-out), box-shadow 100ms, border-color 150ms, background 150ms; }
+.type:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--line); }
+.typeOn { border-color: var(--blue); background: var(--blue-50); box-shadow: 0 3px 0 var(--blue-300); }
+.typeEmoji { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: var(--bg); font-size: 20px; transition: transform 600ms var(--ease-splash), background 150ms; }
+.typeOn .typeEmoji { background: var(--white); transform: rotate(-8deg) scale(1.1); }
+.tip { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 16px 18px; border: 2px solid var(--cyan-200); border-radius: 16px; background: var(--cyan-50); color: var(--navy); }
+.tip b { display: block; font-family: var(--font-display); font-size: 20px; }
+
+/* Step 2: name */
+.nameRow { display: flex; align-items: flex-end; gap: 10px; }
+.emojiBtn { display: grid; place-items: center; flex: none; width: 52px; height: 52px; margin-bottom: 2px; border: 2px solid var(--line-soft); border-radius: 14px; background: var(--white); font-size: 24px; cursor: pointer; transition: transform 100ms var(--ease-out); }
+.emojiBtn:active { transform: scale(0.92); }
+.emojis { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.emojis button { width: 40px; height: 40px; border: 2px solid var(--line-soft); border-radius: 12px; background: var(--white); font-size: 20px; cursor: pointer; transition: transform 300ms var(--ease-splash); }
+.emojis button:hover { transform: scale(1.12); }
+.ideas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+/* Step 3: amount */
+.amount { display: flex; justify-content: center; align-items: baseline; gap: 8px; margin: 4px 0 16px; font-family: var(--font-display); font-weight: 700; }
+.amountValue { font-size: 56px; letter-spacing: -2px; line-height: 1; }
+.amountUnit { font-size: 22px; color: var(--slate); }
+.presets { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 366px; margin: 16px auto 0; }
+.key { height: 50px; border: 2px solid var(--line-soft); border-radius: 12px; background: var(--white); font-family: var(--font-display); font-weight: 700; font-size: 22px; cursor: pointer; box-shadow: 0 2px 0 var(--line); transition: transform 80ms, box-shadow 80ms, background 80ms; }
+.key:active { transform: translateY(2px); box-shadow: none; background: var(--bg); }
+
+/* Step 4: how many */
+.counter { display: flex; align-items: center; justify-content: center; gap: 22px; }
+.round { display: grid; place-items: center; width: 50px; height: 50px; border: 2px solid var(--line-soft); border-radius: 999px; background: var(--white); cursor: pointer; box-shadow: 0 3px 0 var(--line-soft); transition: transform 80ms, box-shadow 80ms; }
+.round:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--line-soft); }
+.round svg { width: 22px; height: 22px; }
+.count { width: 140px; border: 0; background: transparent; text-align: center; font-family: var(--font-display); font-weight: 700; font-size: 52px; letter-spacing: -2px; color: var(--ink); outline: none; }
+.slider { width: 100%; margin: 18px 0 6px; accent-color: var(--blue); }
+.goal { display: flex; justify-content: space-between; align-items: center; margin-top: 18px; padding: 18px 16px; border-radius: 14px; background: var(--blue); color: var(--white); }
+.goal b { font-family: var(--font-display); font-size: 28px; letter-spacing: -1px; }
+
+/* Step 5: deadline, step 6: approvers */
+.options { display: grid; gap: 12px; }
+.option { display: flex; align-items: center; gap: 14px; width: 100%; padding: 12px 14px; border: 2px solid var(--line-soft); border-radius: 16px; background: var(--white); text-align: left; cursor: pointer; box-shadow: 0 3px 0 var(--line-soft); transition: transform 100ms var(--ease-out), box-shadow 100ms, border-color 150ms, background 150ms; }
+.option:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--line-soft); }
+.optionOn { border-color: var(--blue); background: var(--blue-50); box-shadow: 0 3px 0 var(--blue-200); }
+.optionIcon { display: grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 12px; background: var(--bg); font-size: 20px; }
+.optionText { flex: 1; min-width: 0; }
+.optionTitle { font-family: var(--font-display); font-weight: 500; font-size: 16px; }
+.optionSub { color: var(--slate); font-size: 13px; }
+.radio { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border: 2px solid var(--line); border-radius: 999px; color: var(--white); transition: background 150ms, border-color 150ms; }
+.radio svg { width: 14px; height: 14px; }
+.optionOn .radio { border-color: var(--blue); background: var(--blue); }
+.picked { margin: 18px 0 10px; font-family: var(--font-display); font-weight: 500; font-size: 16px; }
+.skip { margin-top: 16px; padding: 0; border: 0; background: none; color: var(--blue); font-family: var(--font-display); font-weight: 500; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+
+/* Step 7 + 8 settings rows */
+.setting { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid var(--line-soft); border-radius: 16px; background: var(--white); }
+.setting > div { flex: 1; }
+.setting b { display: block; font-family: var(--font-display); font-weight: 500; font-size: 16px; }
+.setting span { color: var(--slate); font-size: 13px; }
+
+/* Review */
+.review { padding: 4px 16px 8px; border-radius: 20px; background: var(--white); }
+.reviewHead { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px dashed var(--line); }
+.reviewLine { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 0; border: 0; border-bottom: 1px dashed var(--line); background: none; text-align: left; cursor: pointer; transition: background 150ms; }
+.reviewLine:hover { background: var(--bg); }
+.reviewLine:last-child { border-bottom: 0; }
+.reviewLine dt { flex: 1; color: var(--slate); }
+.reviewLine dd { margin: 0; font-family: var(--font-display); font-weight: 600; }
+.reviewLine svg { width: 16px; height: 16px; color: var(--slate); }
+
+/* Live preview */
+.previewLabel { margin-bottom: 8px; color: var(--slate); font-family: var(--font-display); font-weight: 500; font-size: 14px; }
+.preview { padding: 14px; border-radius: 20px; background: var(--white); box-shadow: var(--shadow-raised); }
+.previewHead { display: flex; align-items: center; gap: 10px; padding-bottom: 6px; }
+.previewEmoji { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 12px; background: var(--bg); font-size: 18px; }
+.previewName { font-family: var(--font-display); font-weight: 500; font-size: 15px; }
+.previewRow { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; font-size: 13px; }
+.previewRow span:first-child { color: var(--slate); white-space: nowrap; }
+.previewRow span:last-child { font-family: var(--font-display); font-weight: 500; text-align: right; }
+
+/* Making the pool */
+.creating { display: grid; place-items: center; align-content: center; gap: 22px; min-height: 100vh; background: var(--bg); text-align: center; }
+.creating :global(.timeline) { width: 230px; text-align: left; }
+
+/* ---------- phones ---------- */
+@media (max-width: 899px) {
+  .grid { grid-template-columns: 1fr; gap: 0; }
+  .grid > aside { display: none; }
+  .title { font-size: 22px; letter-spacing: -0.8px; }
+  .lead { margin: 10px 0 16px; font-size: 15px; }
+  .types { gap: 8px; }
+  .type { height: 56px; padding: 0 10px; gap: 10px; font-size: 15px; }
+  .amountTitle { justify-content: center; text-align: center; }
+  .amount { margin-top: 10px !important; }
+  .amountValue { font-size: 50px; }
+  .amountUnit { font-size: 20px; }
+  .presets { gap: 6px; }
+  .keypad { width: 100%; }
+  .count { font-size: 48px; }
+  .goal b { font-size: 24px; }
+  .creating { min-height: 100vh; padding: 20px; }
+}

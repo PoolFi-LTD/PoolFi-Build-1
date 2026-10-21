@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ApiError } from "../../src/errors.js";
-import { FieldDefinitions, validateFieldValues, type FieldDefinition } from "../../src/fields.js";
+import { ApiError } from "../../src/errors.ts";
+import { FieldDefinitions, validateFieldValues, type FieldDefinition } from "../../src/fields.ts";
 
 const fields: FieldDefinition[] = FieldDefinitions.parse([
   { key: "matric_number", label: "Matric number", type: "text" },

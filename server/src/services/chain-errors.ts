@@ -1,5 +1,5 @@
-import { ApiError } from "../errors.js";
-import { ChainError } from "../stellar/errors.js";
+import { ApiError } from "../errors.ts";
+import { ChainError } from "../stellar/errors.ts";
 
 interface Mapped {
   status: number;
@@ -19,11 +19,20 @@ const POOL_ERROR_LIST: Mapped[] = [
   { status: 409, code: "not_refundable", message: "This pool can't be refunded." },
   { status: 403, code: "not_member", message: "You haven't joined this pool." },
   { status: 409, code: "nothing_to_refund", message: "There is nothing to refund." },
+  { status: 409, code: "approval_required", message: "This pool's payout needs its approvers." },
+  { status: 409, code: "no_approvers", message: "This pool has no approvers." },
+  { status: 400, code: "invalid_approvers", message: "Pick up to 10 different approvers, not including yourself." },
+  { status: 403, code: "not_approver", message: "You're not an approver for this pool." },
+  { status: 409, code: "payout_already_requested", message: "The payout is already waiting for approvers." },
+  { status: 409, code: "no_payout_request", message: "There's no payout waiting for approval." },
+  { status: 409, code: "already_approved", message: "You've already approved this payout." },
+  { status: 409, code: "payout_pending", message: "Payments are paused while the payout waits for approvers." },
+  { status: 400, code: "invalid_fee", message: "That fee isn't allowed." },
 ];
 
 /**
  * Current contract code numbers these errors from 100. Deployments not yet
- * upgraded number them from 1, so both are understood.
+ * upgraded number them from 1 (and only have the first ten), so both are understood.
  */
 const POOL_ERRORS: Record<number, Mapped> = Object.fromEntries(
   POOL_ERROR_LIST.flatMap((mapped, i) => [

@@ -1,10 +1,12 @@
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
-import type { Config } from "./config.js";
-import { ApiError } from "./errors.js";
+import type { Config } from "./config.ts";
+import { ApiError } from "./errors.ts";
 
 export interface AuthUser {
   id: string;
   email: string | null;
+  /** E.164, when the person signed in with their phone. */
+  phone: string | null;
 }
 
 export type Authenticator = (authorization: string | undefined) => Promise<AuthUser>;
@@ -32,7 +34,8 @@ export function createAuthenticator(config: Config["auth"]): Authenticator {
       const { payload } =
         key instanceof Uint8Array ? await jwtVerify(token, key, options) : await jwtVerify(token, key, options);
       if (!payload.sub) throw new Error("token has no subject");
-      return { id: payload.sub, email: typeof payload.email === "string" ? payload.email : null };
+      const phone = typeof payload.phone === "string" && payload.phone ? `+${payload.phone.replace(/^\+/, "")}` : null;
+      return { id: payload.sub, email: typeof payload.email === "string" && payload.email ? payload.email : null, phone };
     } catch {
       throw new ApiError(401, "unauthenticated", "Your session is invalid or has expired. Sign in again.");
     }

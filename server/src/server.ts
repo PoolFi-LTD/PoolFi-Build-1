@@ -1,12 +1,12 @@
-import { buildApp } from "./app.js";
-import { loadConfig } from "./config.js";
-import { Db } from "./db.js";
-import { migrate } from "./migrate.js";
-import { Chain } from "./stellar/chain.js";
-import { PoolContract } from "./stellar/pool-contract.js";
+import { buildApp } from "./app.ts";
+import { loadConfig } from "./config.ts";
+import { Db } from "./db.ts";
+import { migrate } from "./migrate.ts";
+import { Chain } from "./stellar/chain.ts";
+import { PoolContract } from "./stellar/pool-contract.ts";
 
 const config = loadConfig();
-const db = new Db(config.databaseUrl);
+const db = new Db(config.databaseUrl, config.databasePoolMax);
 const chain = new Chain(config.stellar, (key, fn) => db.withLock(key, fn));
 
 const applied = await migrate(db);

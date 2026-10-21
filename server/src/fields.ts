@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ApiError } from "./errors.js";
+import { ApiError } from "./errors.ts";
 
 /** A field the pool admin asks contributors to fill in, e.g. matric number. */
 export const FieldDefinition = z

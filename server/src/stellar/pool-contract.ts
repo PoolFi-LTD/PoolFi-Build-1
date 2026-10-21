@@ -1,5 +1,5 @@
-import { Address, nativeToScVal, scValToNative, type Keypair } from "@stellar/stellar-sdk";
-import type { Chain } from "./chain.js";
+import { Address, nativeToScVal, scValToNative, xdr, type Keypair } from "@stellar/stellar-sdk";
+import type { Chain } from "./chain.ts";
 
 export type PoolStatus = "open" | "funded" | "settled" | "refunded";
 
@@ -14,6 +14,16 @@ export interface ChainPool {
   memberCount: number;
   status: PoolStatus;
   createdAt: Date;
+  /** Wallets that approve the payout; empty when the pool admin is paid out alone. */
+  approvers: string[];
+  /** Approvals of the open payout request, or null when no payout is waiting. */
+  payoutApprovals: string[] | null;
+}
+
+/** The platform fee taken from every payout, never from refunds. */
+export interface ChainFee {
+  bps: number;
+  recipient: string;
 }
 
 export interface ChainMember {
@@ -32,6 +42,8 @@ interface RawPool {
   member_count: number;
   status: string | string[];
   created_at: bigint;
+  approvers?: string[] | null;
+  payout_approvals?: string[] | null;
 }
 
 interface RawMember {
@@ -63,6 +75,51 @@ export class PoolContract {
     ]);
     if (!returnValue) throw new Error(`create_pool transaction ${hash} returned no pool id`);
     return { chainPoolId: BigInt(scValToNative(returnValue)), txHash: hash };
+  }
+
+  /** A pool whose payout needs a majority of `approvers` (wallet addresses) to agree. */
+  async createPoolWithApprovers(
+    admin: Keypair,
+    goalAmount: bigint,
+    deadline: Date,
+    approvers: string[],
+  ): Promise<{ chainPoolId: bigint; txHash: string }> {
+    const deadlineSeconds = BigInt(Math.floor(deadline.getTime() / 1000));
+    const { hash, returnValue } = await this.chain.invoke(admin, "create_pool_with_approvers", [
+      address(admin.publicKey()),
+      i128(goalAmount),
+      u64(deadlineSeconds),
+      xdr.ScVal.scvVec(approvers.map(address)),
+    ]);
+    if (!returnValue) throw new Error(`create_pool_with_approvers transaction ${hash} returned no pool id`);
+    return { chainPoolId: BigInt(scValToNative(returnValue)), txHash: hash };
+  }
+
+  /** The pool admin asks the approvers to release a funded pool's payout. */
+  async requestPayout(admin: Keypair, chainPoolId: bigint): Promise<string> {
+    const { hash } = await this.chain.invoke(admin, "request_payout", [u64(chainPoolId)]);
+    return hash;
+  }
+
+  /** An approver agrees. Once a majority has, the pool admin is paid in the same call. */
+  async approvePayout(approver: Keypair, chainPoolId: bigint): Promise<{ paid: boolean; txHash: string }> {
+    const { hash, returnValue } = await this.chain.invoke(approver, "approve_payout", [
+      u64(chainPoolId),
+      address(approver.publicKey()),
+    ]);
+    return { paid: returnValue ? Boolean(scValToNative(returnValue)) : false, txHash: hash };
+  }
+
+  /** An approver turns the request down; the money stays in the pool. */
+  async declinePayout(approver: Keypair, chainPoolId: bigint): Promise<string> {
+    const { hash } = await this.chain.invoke(approver, "decline_payout", [u64(chainPoolId), address(approver.publicKey())]);
+    return hash;
+  }
+
+  /** The fee taken from payouts; null on a contract upgraded from the first release until its admin sets one. */
+  async fee(): Promise<ChainFee | null> {
+    const raw = scValToNative(await this.chain.read("fee")) as { bps: number; recipient: string } | null | undefined;
+    return raw ? { bps: Number(raw.bps), recipient: String(raw.recipient) } : null;
   }
 
   async joinPool(member: Keypair, chainPoolId: bigint): Promise<string> {
@@ -119,6 +176,8 @@ export class PoolContract {
       memberCount: Number(raw.member_count),
       status: String(status).toLowerCase() as PoolStatus,
       createdAt: fromSeconds(BigInt(raw.created_at)),
+      approvers: (raw.approvers ?? []).map(String),
+      payoutApprovals: raw.payout_approvals ? raw.payout_approvals.map(String) : null,
     };
   }
 

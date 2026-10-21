@@ -9,8 +9,8 @@ import {
   type FeeBumpTransaction,
   type Transaction,
 } from "@stellar/stellar-sdk";
-import type { Config } from "../config.js";
-import { ChainError, contractFailure, transactionFailure } from "./errors.js";
+import type { Config } from "../config.ts";
+import { ChainError, contractFailure, transactionFailure } from "./errors.ts";
 
 /** Serializes work per key; used so one Stellar account never sends two transactions at once. */
 export type Lock = <T>(key: string, fn: () => Promise<T>) => Promise<T>;

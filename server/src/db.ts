@@ -5,8 +5,9 @@ export type Queryable = Pick<pg.PoolClient, "query">;
 export class Db {
   readonly pool: pg.Pool;
 
-  constructor(connectionString: string) {
-    this.pool = new pg.Pool({ connectionString });
+  /** `max` caps connections per server instance; serverless hosts run many small instances. */
+  constructor(connectionString: string, max = 10) {
+    this.pool = new pg.Pool({ connectionString, max });
   }
 
   async query<T extends pg.QueryResultRow>(sql: string, params: unknown[] = []): Promise<T[]> {

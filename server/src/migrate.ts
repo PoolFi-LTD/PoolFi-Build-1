@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Db } from "./db.js";
+import type { Db } from "./db.ts";
 
 export const MIGRATIONS_DIR = new URL("../migrations/", import.meta.url).pathname;
 

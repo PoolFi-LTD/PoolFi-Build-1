@@ -1,9 +1,9 @@
 import { Keypair, Operation } from "@stellar/stellar-sdk";
-import type { AuthUser } from "../auth.js";
-import { decryptSecret, encryptSecret, type EncryptionKey } from "../crypto.js";
-import type { Db } from "../db.js";
-import type { Chain } from "../stellar/chain.js";
-import { toApiError } from "./chain-errors.js";
+import type { AuthUser } from "../auth.ts";
+import { decryptSecret, encryptSecret, type EncryptionKey } from "../crypto.ts";
+import type { Db } from "../db.ts";
+import type { Chain } from "../stellar/chain.ts";
+import { toApiError } from "./chain-errors.ts";
 
 export interface Wallet {
   userId: string;

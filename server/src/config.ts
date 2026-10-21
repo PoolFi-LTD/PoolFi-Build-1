@@ -1,6 +1,6 @@
 import { Networks, StrKey } from "@stellar/stellar-sdk";
 import { z } from "zod";
-import { isUsdcAmount, parseUsdc } from "./money.js";
+import { isUsdcAmount, parseUsdc } from "./money.ts";
 
 const accountAddress = z
   .string()
@@ -23,6 +23,8 @@ const EnvSchema = z
 
     // Use a session-mode or direct connection: wallet locks are Postgres advisory locks.
     DATABASE_URL: z.string().min(1),
+    // Connections per server instance. Keep it small on serverless hosts, which run many instances.
+    DATABASE_POOL_MAX: z.coerce.number().int().positive().max(100).default(10),
 
     STELLAR_RPC_URL: z.url(),
     STELLAR_NETWORK_PASSPHRASE: z.string().min(1),
@@ -93,6 +95,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       .map((origin) => origin.trim())
       .filter(Boolean),
     databaseUrl: e.DATABASE_URL,
+    databasePoolMax: e.DATABASE_POOL_MAX,
     stellar: {
       rpcUrl: e.STELLAR_RPC_URL,
       networkPassphrase: e.STELLAR_NETWORK_PASSPHRASE,

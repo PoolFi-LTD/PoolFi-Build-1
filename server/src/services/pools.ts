@@ -1,13 +1,13 @@
 import { z } from "zod";
-import type { AuthUser } from "../auth.js";
-import type { Db } from "../db.js";
-import { ApiError } from "../errors.js";
-import { FieldDefinitions, validateFieldValues, type FieldDefinition, type FieldValues } from "../fields.js";
-import { formatUsdc, isUsdcAmount, parseUsdc } from "../money.js";
-import type { Chain } from "../stellar/chain.js";
-import type { PoolContract, PoolStatus } from "../stellar/pool-contract.js";
-import { toApiError } from "./chain-errors.js";
-import type { Wallets } from "./wallets.js";
+import type { AuthUser } from "../auth.ts";
+import type { Db } from "../db.ts";
+import { ApiError } from "../errors.ts";
+import { FieldDefinitions, validateFieldValues, type FieldDefinition, type FieldValues } from "../fields.ts";
+import { formatUsdc, isUsdcAmount, parseUsdc } from "../money.ts";
+import type { Chain } from "../stellar/chain.ts";
+import type { PoolContract, PoolStatus } from "../stellar/pool-contract.ts";
+import { toApiError } from "./chain-errors.ts";
+import type { Wallets } from "./wallets.ts";
 
 /** Deadlines closer than this are rejected, so ledger clock drift can't make them already past. */
 const MIN_DEADLINE_LEAD_MS = 60_000;

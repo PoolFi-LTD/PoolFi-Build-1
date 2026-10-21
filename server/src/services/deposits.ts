@@ -1,12 +1,12 @@
 import { Keypair, Operation } from "@stellar/stellar-sdk";
-import type { AuthUser } from "../auth.js";
-import type { Config } from "../config.js";
-import type { Db } from "../db.js";
-import { ApiError } from "../errors.js";
-import { formatUsdc } from "../money.js";
-import type { Chain } from "../stellar/chain.js";
-import { toApiError } from "./chain-errors.js";
-import type { Wallets } from "./wallets.js";
+import type { AuthUser } from "../auth.ts";
+import type { Config } from "../config.ts";
+import type { Db } from "../db.ts";
+import { ApiError } from "../errors.ts";
+import { formatUsdc } from "../money.ts";
+import type { Chain } from "../stellar/chain.ts";
+import { toApiError } from "./chain-errors.ts";
+import type { Wallets } from "./wallets.ts";
 
 export interface Deposit {
   id: string;

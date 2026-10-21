@@ -1,11 +1,11 @@
-import type { Config } from "../config.js";
-import type { Db } from "../db.js";
-import type { Chain } from "../stellar/chain.js";
-import { PoolContract } from "../stellar/pool-contract.js";
-import { Deposits } from "./deposits.js";
-import { Pools } from "./pools.js";
-import { RefundJob, type Logger } from "./refunds.js";
-import { Wallets } from "./wallets.js";
+import type { Config } from "../config.ts";
+import type { Db } from "../db.ts";
+import type { Chain } from "../stellar/chain.ts";
+import { PoolContract } from "../stellar/pool-contract.ts";
+import { Deposits } from "./deposits.ts";
+import { Pools } from "./pools.ts";
+import { RefundJob, type Logger } from "./refunds.ts";
+import { Wallets } from "./wallets.ts";
 
 export function createServices({ config, db, chain }: { config: Config; db: Db; chain: Chain }, log: Logger) {
   const contract = new PoolContract(chain);

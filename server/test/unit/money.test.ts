@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatUsdc, parseUsdc } from "../../src/money.js";
+import { formatUsdc, parseUsdc } from "../../src/money.ts";
 
 describe("parseUsdc", () => {
   it("converts USDC to 7-decimal base units", () => {

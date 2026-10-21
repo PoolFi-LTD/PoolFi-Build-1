@@ -1,6 +1,6 @@
-import { loadConfig } from "../config.js";
-import { Db } from "../db.js";
-import { migrate } from "../migrate.js";
+import { loadConfig } from "../config.ts";
+import { Db } from "../db.ts";
+import { migrate } from "../migrate.ts";
 
 const db = new Db(loadConfig().databaseUrl);
 try {

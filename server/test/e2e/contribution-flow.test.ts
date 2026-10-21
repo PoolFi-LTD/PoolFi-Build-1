@@ -5,10 +5,10 @@
  */
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ApiError } from "../../src/errors.js";
-import { parseUsdc } from "../../src/money.js";
-import { toApiError } from "../../src/services/chain-errors.js";
-import { startHarness, type Harness, type TestUser } from "./harness.js";
+import { ApiError } from "../../src/errors.ts";
+import { parseUsdc } from "../../src/money.ts";
+import { toApiError } from "../../src/services/chain-errors.ts";
+import { startHarness, type Harness, type TestUser } from "./harness.ts";
 
 let h: Harness;
 

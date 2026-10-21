@@ -1,8 +1,8 @@
 import { StrKey, xdr } from "@stellar/stellar-sdk";
 import { describe, expect, it } from "vitest";
-import { ApiError } from "../../src/errors.js";
-import { toApiError } from "../../src/services/chain-errors.js";
-import { ChainError, contractFailure, findContractError } from "../../src/stellar/errors.js";
+import { ApiError } from "../../src/errors.ts";
+import { toApiError } from "../../src/services/chain-errors.ts";
+import { ChainError, contractFailure, findContractError } from "../../src/stellar/errors.ts";
 
 const POOL = "CCOOBNXMOJTZVGNX7X33ZBQMBEBVITFYVBY4SS67I43UHUW5C2ZY7P2R";
 const USDC = "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";

@@ -1,14 +1,14 @@
 import cors from "@fastify/cors";
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
-import { createAuthenticator, type AuthUser } from "./auth.js";
-import type { Config } from "./config.js";
-import type { Db } from "./db.js";
-import { ApiError } from "./errors.js";
-import { formatUsdc, isUsdcAmount, parseUsdc } from "./money.js";
-import { createServices, type Services } from "./services/index.js";
-import { ContributeInput, CreatePoolInput, JoinPoolInput } from "./services/pools.js";
-import type { Chain } from "./stellar/chain.js";
+import { createAuthenticator, type AuthUser } from "./auth.ts";
+import type { Config } from "./config.ts";
+import type { Db } from "./db.ts";
+import { ApiError } from "./errors.ts";
+import { formatUsdc, isUsdcAmount, parseUsdc } from "./money.ts";
+import { createServices, type Services } from "./services/index.ts";
+import { ContributeInput, CreatePoolInput, JoinPoolInput } from "./services/pools.ts";
+import type { Chain } from "./stellar/chain.ts";
 
 export interface AppDeps {
   config: Config;

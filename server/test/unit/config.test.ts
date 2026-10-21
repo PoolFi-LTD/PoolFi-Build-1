@@ -1,6 +1,6 @@
 import { Keypair, Networks } from "@stellar/stellar-sdk";
 import { describe, expect, it } from "vitest";
-import { loadConfig } from "../../src/config.js";
+import { loadConfig } from "../../src/config.ts";
 
 const valid = {
   DATABASE_URL: "postgres://localhost/poolfi",

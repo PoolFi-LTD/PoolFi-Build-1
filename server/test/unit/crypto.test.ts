@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Keypair } from "@stellar/stellar-sdk";
 import { describe, expect, it } from "vitest";
-import { decryptSecret, encryptSecret } from "../../src/crypto.js";
+import { decryptSecret, encryptSecret } from "../../src/crypto.ts";
 
 const key = { key: randomBytes(32), version: 1 };
 const secret = Keypair.random().secret();

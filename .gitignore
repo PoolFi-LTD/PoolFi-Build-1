@@ -8,6 +8,9 @@ target
 # Agent instructions (local only)
 AGENTS.md
 
+# Packages (installed from the repo root)
+/node_modules
+
 # Server
 server/node_modules
 server/.env

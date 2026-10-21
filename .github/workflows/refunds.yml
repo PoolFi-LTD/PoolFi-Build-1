@@ -1,0 +1,28 @@
+# Refunds contributors of pools that missed their goal, every 10 minutes. Vercel's free
+# plan only runs its own scheduled job (web/vercel.json) once a day, so this keeps
+# refunds prompt. Needs two repository secrets (Settings → Secrets and variables → Actions):
+#   POOLFI_URL   the deployed site, e.g. https://poolfi.vercel.app
+#   CRON_SECRET  the same value as the CRON_SECRET environment variable on Vercel
+name: Refunds
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  refunds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Run the refund job
+        env:
+          POOLFI_URL: ${{ secrets.POOLFI_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$POOLFI_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "POOLFI_URL or CRON_SECRET isn't set yet, so there's nothing to call."
+            exit 0
+          fi
+          curl --fail-with-body --silent --show-error --max-time 300 \
+            --header "Authorization: Bearer $CRON_SECRET" "$POOLFI_URL/api/cron/refunds"

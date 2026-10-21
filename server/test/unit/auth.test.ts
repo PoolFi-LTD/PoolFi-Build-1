@@ -1,6 +1,6 @@
 import { SignJWT } from "jose";
 import { describe, expect, it } from "vitest";
-import { createAuthenticator } from "../../src/auth.js";
+import { createAuthenticator } from "../../src/auth.ts";
 
 const secret = "a-test-signing-secret-that-is-long-enough";
 const authenticate = createAuthenticator({ jwtSecret: secret, audience: "authenticated", jwksUrl: undefined, issuer: undefined });

@@ -4,8 +4,8 @@
  * passes below the goal.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { parseUsdc } from "../../src/money.js";
-import { startHarness, type Harness } from "./harness.js";
+import { parseUsdc } from "../../src/money.ts";
+import { startHarness, type Harness } from "./harness.ts";
 
 let h: Harness;
 

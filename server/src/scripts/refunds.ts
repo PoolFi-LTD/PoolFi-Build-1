@@ -1,7 +1,7 @@
-import { loadConfig } from "../config.js";
-import { Db } from "../db.js";
-import { createServices } from "../services/index.js";
-import { Chain } from "../stellar/chain.js";
+import { loadConfig } from "../config.ts";
+import { Db } from "../db.ts";
+import { createServices } from "../services/index.ts";
+import { Chain } from "../stellar/chain.ts";
 
 // One pass of the refund job, for running from an external scheduler (cron, etc.).
 const config = loadConfig();

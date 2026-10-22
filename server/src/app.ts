@@ -32,7 +32,9 @@ export async function buildApp({ config, db, chain, mailer }: AppDeps): Promise<
   });
   await app.register(cors, { origin: config.corsOrigins.length > 0 ? config.corsOrigins : false });
 
-  const authenticate = createAuthenticator(config.auth);
+  const authenticate = createAuthenticator(config.auth, (reason) =>
+    app.log.warn({ reason, check: config.auth.jwksUrl ? "jwks" : "shared secret" }, "sign-in token rejected"),
+  );
   const services = createServices({ config, db, chain, mailer }, app.log);
   const { wallets, deposits, pools } = services;
 

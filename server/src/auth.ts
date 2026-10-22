@@ -15,7 +15,11 @@ export type Authenticator = (authorization: string | undefined) => Promise<AuthU
  * Verifies `Authorization: Bearer <token>` sign-in tokens issued by the auth
  * provider. Which sign-up method issued them doesn't matter here.
  */
-export function createAuthenticator(config: Config["auth"]): Authenticator {
+export function createAuthenticator(
+  config: Config["auth"],
+  /** Told why a token was turned away (wrong issuer, expired…), never the token itself. */
+  onReject?: (reason: string) => void,
+): Authenticator {
   const key: JWTVerifyGetKey | Uint8Array = config.jwksUrl
     ? createRemoteJWKSet(new URL(config.jwksUrl))
     : new TextEncoder().encode(config.jwtSecret);
@@ -36,7 +40,8 @@ export function createAuthenticator(config: Config["auth"]): Authenticator {
       if (!payload.sub) throw new Error("token has no subject");
       const phone = typeof payload.phone === "string" && payload.phone ? `+${payload.phone.replace(/^\+/, "")}` : null;
       return { id: payload.sub, email: typeof payload.email === "string" && payload.email ? payload.email : null, phone };
-    } catch {
+    } catch (error) {
+      onReject?.(error instanceof Error ? error.message : String(error));
       throw new ApiError(401, "unauthenticated", "Your session is invalid or has expired. Sign in again.");
     }
   };

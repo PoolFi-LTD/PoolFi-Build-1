@@ -18,7 +18,8 @@ function supabase(): SupabaseClient {
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!url || !key) throw new ApiError("not_configured", "Sign-in isn't set up yet.");
     supabaseClient = createClient(url, key, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+      // The emailed code is the main way in; a sign-in link (if Supabase's email has one) works too.
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
     });
   }
   return supabaseClient;

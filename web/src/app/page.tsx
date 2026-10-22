@@ -14,8 +14,11 @@ function Welcome() {
   const next = useSearchParams().get("next");
   const nextQuery = next ? `&next=${encodeURIComponent(next)}` : "";
 
+  // Signed in (also by an emailed sign-in link): new accounts set up their profile first.
   useEffect(() => {
-    if (user) router.replace(next ?? "/home");
+    if (!user) return;
+    if (!user.firstName) router.replace(`/signup/profile${next ? `?next=${encodeURIComponent(next)}` : ""}`);
+    else router.replace(next ?? "/home");
   }, [user, next, router]);
 
   return (

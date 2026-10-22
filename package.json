@@ -14,5 +14,8 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "overrides": {
+    "light-my-request": "6.6.0"
   }
 }

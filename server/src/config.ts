@@ -149,7 +149,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
         e.AUTH_JWKS_URL ??
         (e.NEXT_PUBLIC_SUPABASE_URL ? `${e.NEXT_PUBLIC_SUPABASE_URL.replace(/\/$/, "")}/auth/v1/.well-known/jwks.json` : undefined),
       jwtSecret: e.AUTH_JWT_SECRET,
-      issuer: e.AUTH_JWT_ISSUER?.replace(/\/$/, ""),
+      // Keep the verifier in sync with the project issuing browser tokens. A stale
+      // AUTH_JWT_ISSUER in a deployment can otherwise reject valid Supabase sessions.
+      issuer: e.NEXT_PUBLIC_SUPABASE_URL
+        ? `${e.NEXT_PUBLIC_SUPABASE_URL.replace(/\/$/, "")}/auth/v1`
+        : e.AUTH_JWT_ISSUER?.replace(/\/$/, ""),
       audience: e.AUTH_JWT_AUDIENCE,
     },
     deposits:

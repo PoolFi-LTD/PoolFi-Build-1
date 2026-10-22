@@ -13,10 +13,9 @@ import s from "../auth.module.css";
 
 const RESEND_SECONDS = 30;
 
-function Verify() {
+function Verify({ to }: { to: string }) {
   const router = useRouter();
   const params = useSearchParams();
-  const to = params.get("to") ?? "";
   const next = params.get("next");
   const { refresh } = useSession();
   const [digits, setDigits] = useState<string[]>(Array(CODE_LENGTH).fill(""));
@@ -144,10 +143,19 @@ function Verify() {
   );
 }
 
+function VerifyRoute() {
+  const params = useSearchParams();
+  const to = params.get("to") ?? "";
+
+  // A code and its verified state belong to one recipient only. Remounting
+  // prevents Next's back/forward navigation from carrying them to another email.
+  return <Verify key={to} to={to} />;
+}
+
 export default function Page() {
   return (
     <Suspense>
-      <Verify />
+      <VerifyRoute />
     </Suspense>
   );
 }

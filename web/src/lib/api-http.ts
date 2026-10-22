@@ -123,8 +123,8 @@ export const httpApi: PoolFiApi = {
     remember(to);
   },
 
-  async verifyCode(code) {
-    const email = pendingEmail();
+  async verifyCode(code, recipient) {
+    const email = recipient?.trim().toLowerCase() || pendingEmail();
     if (!email) throw new ApiError("code_expired", "Ask for a new code.");
     const { error } = await supabase().auth.verifyOtp({ email, token: code, type: "email" });
     if (error) throw authError(error, true);

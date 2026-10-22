@@ -509,20 +509,21 @@ export const sampleApi: PoolFiApi = {
       s.pending = { to: value, existing };
     }, 500),
 
-  verifyCode: (code) =>
+  verifyCode: (code, recipient) =>
     respond(() => {
       const s = load();
       if (!new RegExp(`^\\d{${CODE_LENGTH}}$`).test(code)) throw new ApiError("invalid_code", "That code isn't right. Check it and try again.");
       const pending = s.pending;
       if (!pending) throw new ApiError("code_expired", "Ask for a new code.");
-      const existing = Object.values(s.users).find((u) => u.email === pending.to);
+      const email = recipient?.trim().toLowerCase() || pending.to;
+      const existing = Object.values(s.users).find((u) => u.email === email);
       s.pending = null;
       if (existing) {
         s.session = existing.id;
         return { needsProfile: false };
       }
       const id = `user${s.nextId++}`;
-      s.users[id] = { ...user(id, "", ""), email: pending.to, phone: null };
+      s.users[id] = { ...user(id, "", ""), email, phone: null };
       s.session = id;
       return { needsProfile: true };
     }, 600),

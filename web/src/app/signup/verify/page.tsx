@@ -35,7 +35,7 @@ function Verify() {
     setState("checking");
     setError(null);
     try {
-      const { needsProfile } = await api.verifyCode(code);
+      const { needsProfile } = await api.verifyCode(code, to);
       setState("verified");
       sound.win();
       haptic([20, 30, 20]);
@@ -77,8 +77,16 @@ function Verify() {
   }
 
   async function resend() {
-    await api.sendCode(to).catch(setError);
-    setLeft(RESEND_SECONDS);
+    setError(null);
+    try {
+      await api.sendCode(to);
+      setDigits(Array(CODE_LENGTH).fill(""));
+      setState("idle");
+      setLeft(RESEND_SECONDS);
+      boxes.current[0]?.focus();
+    } catch (e) {
+      setError(e);
+    }
   }
 
   return (

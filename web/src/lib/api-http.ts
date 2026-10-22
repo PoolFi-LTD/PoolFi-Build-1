@@ -116,9 +116,12 @@ export const httpApi: PoolFiApi = {
     }
   },
 
-  async sendCode(email) {
+  async sendCode(email, redirectTo) {
     const to = email.trim().toLowerCase();
-    const { error } = await supabase().auth.signInWithOtp({ email: to, options: { shouldCreateUser: true } });
+    const { error } = await supabase().auth.signInWithOtp({
+      email: to,
+      options: { shouldCreateUser: true, ...(redirectTo ? { emailRedirectTo: redirectTo } : {}) },
+    });
     if (error) throw authError(error, false);
     remember(to);
   },

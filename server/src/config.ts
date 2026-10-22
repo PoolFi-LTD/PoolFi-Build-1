@@ -27,6 +27,14 @@ function isTimeZone(value: string): boolean {
   }
 }
 
+function issuerFromJwksUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const jwks = new URL(value);
+  const suffix = "/.well-known/jwks.json";
+  if (!jwks.pathname.endsWith(suffix)) return undefined;
+  return `${jwks.origin}${jwks.pathname.slice(0, -suffix.length)}`.replace(/\/$/, "");
+}
+
 const EnvSchema = z
   .object({
     PORT: z.coerce.number().int().positive().default(8080),
@@ -120,6 +128,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     throw new Error(`Invalid configuration:\n${z.prettifyError(parsed.error)}`);
   }
   const e = parsed.data;
+  const jwksUrl =
+    e.AUTH_JWKS_URL ??
+    (e.NEXT_PUBLIC_SUPABASE_URL ? `${e.NEXT_PUBLIC_SUPABASE_URL.replace(/\/$/, "")}/auth/v1/.well-known/jwks.json` : undefined);
   return {
     port: e.PORT,
     host: e.HOST,
@@ -145,15 +156,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       version: e.WALLET_ENCRYPTION_KEY_VERSION,
     },
     auth: {
-      jwksUrl:
-        e.AUTH_JWKS_URL ??
-        (e.NEXT_PUBLIC_SUPABASE_URL ? `${e.NEXT_PUBLIC_SUPABASE_URL.replace(/\/$/, "")}/auth/v1/.well-known/jwks.json` : undefined),
+      jwksUrl,
       jwtSecret: e.AUTH_JWT_SECRET,
-      // Keep the verifier in sync with the project issuing browser tokens. A stale
-      // AUTH_JWT_ISSUER in a deployment can otherwise reject valid Supabase sessions.
-      issuer: e.NEXT_PUBLIC_SUPABASE_URL
-        ? `${e.NEXT_PUBLIC_SUPABASE_URL.replace(/\/$/, "")}/auth/v1`
-        : e.AUTH_JWT_ISSUER?.replace(/\/$/, ""),
+      // Derive the issuer from the JWKS source so stale or missing app URL variables
+      // cannot make the server reject tokens signed by the trusted auth project.
+      issuer: issuerFromJwksUrl(jwksUrl) ?? e.AUTH_JWT_ISSUER?.replace(/\/$/, ""),
       audience: e.AUTH_JWT_AUDIENCE,
     },
     deposits:

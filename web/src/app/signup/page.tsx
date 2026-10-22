@@ -8,7 +8,7 @@ import { AuthShell } from "@/components/shells";
 import { BusyButton, ErrorText, ProgressBar } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAction } from "@/lib/hooks";
-import { CODE_LENGTH } from "@/lib/signin";
+import { CODE_LENGTH, signInRedirectUrl } from "@/lib/signin";
 import s from "./auth.module.css";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -27,7 +27,7 @@ function SignUp() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!valid) return;
-    const sent = await send.run(to);
+    const sent = await send.run(to, signInRedirectUrl(window.location.origin, next));
     if (!sent.ok) return;
     const q = new URLSearchParams({ to, mode: login ? "login" : "signup", ...(next ? { next } : {}) });
     router.push(`/signup/verify?${q}`);

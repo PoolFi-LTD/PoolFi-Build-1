@@ -7,7 +7,7 @@ import { useSession } from "@/components/providers";
 import { AuthShell } from "@/components/shells";
 import { ErrorText, ProgressBar, Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
-import { CODE_LENGTH } from "@/lib/signin";
+import { CODE_LENGTH, signInRedirectUrl } from "@/lib/signin";
 import { haptic, sound } from "@/lib/sound";
 import s from "../auth.module.css";
 
@@ -79,7 +79,7 @@ function Verify() {
   async function resend() {
     setError(null);
     try {
-      await api.sendCode(to);
+      await api.sendCode(to, signInRedirectUrl(window.location.origin, next));
       setDigits(Array(CODE_LENGTH).fill(""));
       setState("idle");
       setLeft(RESEND_SECONDS);

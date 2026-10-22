@@ -22,7 +22,7 @@ export interface PoolFiApi {
   // Sign-in
   getSession(): Promise<User | null>;
   /** Emails a 6-digit sign-in code. */
-  sendCode(email: string): Promise<void>;
+  sendCode(email: string, redirectTo?: string): Promise<void>;
   /** Returns whether this is a new account that still needs a profile. */
   verifyCode(code: string, email?: string): Promise<{ needsProfile: boolean }>;
   saveProfile(profile: { firstName: string; lastName: string; avatar: Avatar }): Promise<User>;

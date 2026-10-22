@@ -13,6 +13,11 @@ const contractAddress = z
   .refine((v) => StrKey.isValidContract(v), "must be a contract address (C...)");
 const usdcAmount = z.string().refine(isUsdcAmount, "must be a USDC amount, e.g. 500 or 12.5");
 
+/** Pasted settings sometimes keep spaces or quotes around the value. */
+function unquote(value: unknown): unknown {
+  return typeof value === "string" ? value.trim().replace(/^(["'])(.*)\1$/, "$2") : value;
+}
+
 function isTimeZone(value: string): boolean {
   try {
     new Intl.DateTimeFormat("en", { timeZone: value });
@@ -57,10 +62,12 @@ const EnvSchema = z
     WALLET_ENCRYPTION_KEY_VERSION: z.coerce.number().int().positive().default(1),
 
     // Verify sign-in tokens with the auth provider's JWKS (e.g. Supabase), or a shared secret.
-    AUTH_JWKS_URL: z.url().optional(),
-    AUTH_JWT_SECRET: z.string().min(32).optional(),
-    AUTH_JWT_ISSUER: z.string().min(1).optional(),
-    AUTH_JWT_AUDIENCE: z.string().min(1).optional(),
+    AUTH_JWKS_URL: z.preprocess(unquote, z.url().optional()),
+    AUTH_JWT_SECRET: z.preprocess(unquote, z.string().min(32).optional()),
+    AUTH_JWT_ISSUER: z.preprocess(unquote, z.string().min(1).optional()),
+    AUTH_JWT_AUDIENCE: z.preprocess(unquote, z.string().min(1).optional()),
+    // The web app's Supabase project. Without AUTH_JWKS_URL, sign-ins are checked against its keys.
+    NEXT_PUBLIC_SUPABASE_URL: z.preprocess(unquote, z.url().optional()),
 
     // Where "Deposit" gets USDC from. Unset disables deposits.
     DEPOSIT_PROVIDER: z.enum(["testnet-treasury"]).optional(),
@@ -86,8 +93,8 @@ const EnvSchema = z
     REFUND_JOB_CONCURRENCY: z.coerce.number().int().positive().max(20).default(4),
   })
   .superRefine((env, ctx) => {
-    if (!env.AUTH_JWKS_URL && !env.AUTH_JWT_SECRET) {
-      ctx.addIssue({ code: "custom", path: ["AUTH_JWKS_URL"], message: "set AUTH_JWKS_URL or AUTH_JWT_SECRET" });
+    if (!env.AUTH_JWKS_URL && !env.AUTH_JWT_SECRET && !env.NEXT_PUBLIC_SUPABASE_URL) {
+      ctx.addIssue({ code: "custom", path: ["AUTH_JWKS_URL"], message: "set AUTH_JWKS_URL, AUTH_JWT_SECRET or NEXT_PUBLIC_SUPABASE_URL" });
     }
     if (env.RESEND_API_KEY && !env.EMAIL_FROM) {
       ctx.addIssue({ code: "custom", path: ["EMAIL_FROM"], message: "set the sender, e.g. PoolFi <noreply@thepoolfi.com>" });
@@ -138,9 +145,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       version: e.WALLET_ENCRYPTION_KEY_VERSION,
     },
     auth: {
-      jwksUrl: e.AUTH_JWKS_URL,
+      jwksUrl:
+        e.AUTH_JWKS_URL ??
+        (e.NEXT_PUBLIC_SUPABASE_URL ? `${e.NEXT_PUBLIC_SUPABASE_URL.replace(/\/$/, "")}/auth/v1/.well-known/jwks.json` : undefined),
       jwtSecret: e.AUTH_JWT_SECRET,
-      issuer: e.AUTH_JWT_ISSUER,
+      issuer: e.AUTH_JWT_ISSUER?.replace(/\/$/, ""),
       audience: e.AUTH_JWT_AUDIENCE,
     },
     deposits:

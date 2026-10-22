@@ -3,6 +3,8 @@ export class ApiError extends Error {
   constructor(
     readonly code: string,
     message: string,
+    /** Extra facts from the server, e.g. why a sign-in was turned away. */
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
   }

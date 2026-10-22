@@ -84,9 +84,15 @@ async function request<T>(method: "GET" | "POST" | "PUT", path: string, body?: u
   } catch {
     throw new ApiError("network_error", "Couldn't reach PoolFi. Check your connection and try again.");
   }
-  const data = (await response.json().catch(() => null)) as { error?: { code: string; message: string } } | null;
+  const data = (await response.json().catch(() => null)) as {
+    error?: { code: string; message: string; details?: Record<string, unknown> };
+  } | null;
   if (!response.ok) {
-    throw new ApiError(data?.error?.code ?? "request_failed", data?.error?.message ?? "Something went wrong. Try again.");
+    throw new ApiError(
+      data?.error?.code ?? "request_failed",
+      data?.error?.message ?? "Something went wrong. Try again.",
+      data?.error?.details,
+    );
   }
   return data as T;
 }
@@ -128,8 +134,18 @@ export const httpApi: PoolFiApi = {
       // Nothing to clean up.
     }
     pending = null;
-    const user = await get<User>("/me");
-    return { needsProfile: !user.firstName };
+    try {
+      const user = await get<User>("/me");
+      return { needsProfile: !user.firstName };
+    } catch (error) {
+      // Supabase accepted the code but PoolFi's server didn't accept the sign-in: say why,
+      // so a screenshot is enough to fix the server's settings.
+      if (error instanceof ApiError && error.code === "unauthenticated") {
+        const reason = typeof error.details?.reason === "string" ? ` (${error.details.reason})` : "";
+        throw new ApiError("signin_rejected", `Your code was right, but PoolFi couldn't confirm the sign-in${reason}.`);
+      }
+      throw error;
+    }
   },
 
   saveProfile: (profile) => request<User>("PUT", "/me/profile", profile),

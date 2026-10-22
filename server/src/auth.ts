@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
+import { createRemoteJWKSet, decodeProtectedHeader, jwtVerify, type JWTVerifyGetKey } from "jose";
 import type { Config } from "./config.ts";
 import { ApiError } from "./errors.ts";
 
@@ -20,14 +20,12 @@ export function createAuthenticator(
   /** Told why a token was turned away (wrong issuer, expired…), never the token itself. */
   onReject?: (reason: string) => void,
 ): Authenticator {
-  const key: JWTVerifyGetKey | Uint8Array = config.jwksUrl
-    ? createRemoteJWKSet(new URL(config.jwksUrl))
-    : new TextEncoder().encode(config.jwtSecret);
-  const options = {
-    issuer: config.issuer,
-    audience: config.audience,
-    algorithms: config.jwksUrl ? undefined : ["HS256"],
-  };
+  // Supabase signs with its published keys (ES256/RS256); older projects with a shared
+  // secret (HS256). Each token is checked the way it was signed, so a leftover secret
+  // setting can't turn away key-signed sign-ins.
+  const keys: JWTVerifyGetKey | null = config.jwksUrl ? createRemoteJWKSet(new URL(config.jwksUrl)) : null;
+  const secret = config.jwtSecret ? new TextEncoder().encode(config.jwtSecret) : null;
+  const claims = { issuer: config.issuer, audience: config.audience };
 
   return async (authorization) => {
     const token = authorization?.match(/^Bearer (\S+)$/i)?.[1];
@@ -35,14 +33,23 @@ export function createAuthenticator(
       throw new ApiError(401, "unauthenticated", "Sign in to continue.");
     }
     try {
-      const { payload } =
-        key instanceof Uint8Array ? await jwtVerify(token, key, options) : await jwtVerify(token, key, options);
+      const { alg } = decodeProtectedHeader(token);
+      let payload;
+      if (alg === "HS256") {
+        if (!secret) throw new Error("token is signed with a shared secret (HS256), but AUTH_JWT_SECRET isn't set");
+        ({ payload } = await jwtVerify(token, secret, { ...claims, algorithms: ["HS256"] }));
+      } else {
+        if (!keys) throw new Error(`token is signed with keys (${alg}), but AUTH_JWKS_URL isn't set`);
+        ({ payload } = await jwtVerify(token, keys, { ...claims, algorithms: ["ES256", "RS256", "EdDSA"] }));
+      }
       if (!payload.sub) throw new Error("token has no subject");
       const phone = typeof payload.phone === "string" && payload.phone ? `+${payload.phone.replace(/^\+/, "")}` : null;
       return { id: payload.sub, email: typeof payload.email === "string" && payload.email ? payload.email : null, phone };
     } catch (error) {
-      onReject?.(error instanceof Error ? error.message : String(error));
-      throw new ApiError(401, "unauthenticated", "Your session is invalid or has expired. Sign in again.");
+      // The reason names the check that failed (issuer, audience, expiry…), never the token.
+      const reason = error instanceof Error ? error.message : String(error);
+      onReject?.(reason);
+      throw new ApiError(401, "unauthenticated", "Your session is invalid or has expired. Sign in again.", { reason });
     }
   };
 }

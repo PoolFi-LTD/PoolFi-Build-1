@@ -22,7 +22,22 @@ describe("loadConfig", () => {
   });
 
   it("requires a way to verify sign-ins", () => {
-    expect(() => loadConfig({ ...valid, AUTH_JWT_SECRET: "" })).toThrow(/AUTH_JWKS_URL or AUTH_JWT_SECRET/);
+    expect(() => loadConfig({ ...valid, AUTH_JWT_SECRET: "" })).toThrow(/AUTH_JWKS_URL, AUTH_JWT_SECRET or NEXT_PUBLIC_SUPABASE_URL/);
+  });
+
+  it("finds Supabase's keys from the project URL, and tidies pasted values", () => {
+    const auth = loadConfig({
+      ...valid,
+      AUTH_JWT_SECRET: "",
+      NEXT_PUBLIC_SUPABASE_URL: "https://abc.supabase.co/",
+      AUTH_JWT_ISSUER: ' "https://abc.supabase.co/auth/v1/" ',
+      AUTH_JWT_AUDIENCE: "'authenticated'",
+    }).auth;
+    expect(auth).toMatchObject({
+      jwksUrl: "https://abc.supabase.co/auth/v1/.well-known/jwks.json",
+      issuer: "https://abc.supabase.co/auth/v1",
+      audience: "authenticated",
+    });
   });
 
   it("rejects malformed keys and addresses", () => {

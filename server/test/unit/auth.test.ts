@@ -1,4 +1,4 @@
-import { SignJWT } from "jose";
+import { generateKeyPair, SignJWT } from "jose";
 import { describe, expect, it } from "vitest";
 import { createAuthenticator } from "../../src/auth.ts";
 
@@ -19,6 +19,19 @@ describe("createAuthenticator", () => {
   it("reads a phone sign-in as E.164", async () => {
     const jwt = await token({ sub: "user-2", email: "", phone: "2348035550142", aud: "authenticated" });
     await expect(authenticate(`Bearer ${jwt}`)).resolves.toEqual({ id: "user-2", email: null, phone: "+2348035550142" });
+  });
+
+  it("says why a sign-in signed with keys can't be checked by a secret-only server", async () => {
+    const { privateKey } = await generateKeyPair("ES256");
+    const jwt = await new SignJWT({ sub: "user-3", aud: "authenticated" })
+      .setProtectedHeader({ alg: "ES256" })
+      .setIssuedAt()
+      .setExpirationTime("1h")
+      .sign(privateKey);
+    await expect(authenticate(`Bearer ${jwt}`)).rejects.toMatchObject({
+      status: 401,
+      details: { reason: expect.stringContaining("AUTH_JWKS_URL") },
+    });
   });
 
   it("rejects a missing or malformed header", async () => {

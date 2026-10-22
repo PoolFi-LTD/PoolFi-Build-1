@@ -131,6 +131,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
   const jwksUrl =
     e.AUTH_JWKS_URL ??
     (e.NEXT_PUBLIC_SUPABASE_URL ? `${e.NEXT_PUBLIC_SUPABASE_URL.replace(/\/$/, "")}/auth/v1/.well-known/jwks.json` : undefined);
+  const usesSupabaseAuth = Boolean(jwksUrl && new URL(jwksUrl).pathname.endsWith("/auth/v1/.well-known/jwks.json"));
   return {
     port: e.PORT,
     host: e.HOST,
@@ -161,7 +162,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       // Derive the issuer from the JWKS source so stale or missing app URL variables
       // cannot make the server reject tokens signed by the trusted auth project.
       issuer: issuerFromJwksUrl(jwksUrl) ?? e.AUTH_JWT_ISSUER?.replace(/\/$/, ""),
-      audience: e.AUTH_JWT_AUDIENCE,
+      // Supabase user access tokens use this audience. Ignore a stale Vercel override
+      // when the trusted signing keys are Supabase's Auth JWKS.
+      audience: usesSupabaseAuth ? "authenticated" : e.AUTH_JWT_AUDIENCE,
     },
     deposits:
       e.DEPOSIT_PROVIDER && e.TREASURY_SECRET

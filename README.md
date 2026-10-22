@@ -1,6 +1,6 @@
 # PoolFi Build
 
- We did the full build for [PoolFi](https://app.thepoolfi.com), group money collection on Stellar blockchain. It has three parts: the pool contract, a Soroban smart contract that holds group contributions in USDC; the server, an HTTP API that gives every user a wallet and runs the contribution flow for them; and the web app in `web/` (see [web/README.md](web/README.md)).
+ We did the full build for [PoolFi](https://app.thepoolfi.com), group money collection on Stellar blockchain. It has three parts: the pool contract, a Soroban smart contract that holds group contributions in USDC; the server, an HTTP API that gives every user a wallet and also runs the contribution flow for them; and the web app in `web/` (see [web/README.md](web/README.md)).
 
 The design, states, roles and functions are well described and stated in [docs/contract-plan.md](docs/contract-plan.md).
 

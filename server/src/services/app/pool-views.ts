@@ -38,6 +38,8 @@ export interface AppPoolRow {
   pick_your_name: boolean;
   allow_not_on_list: boolean;
   divers_can_share: boolean;
+  /** Divers see each other's payments; otherwise only their own and the totals. */
+  divers_see_payments: boolean;
 }
 
 export interface DiverRow {
@@ -231,13 +233,15 @@ export class PoolViews {
         [row.id],
       ),
       this.latestRequest(row.id),
-      this.activity([row.id], viewerId, 50),
+      viewerId ? this.paymentsHiddenIn([row], viewerId).then((hidden) => this.activity([row.id], viewerId, 50, hidden)) : this.activity([row.id], null, 50),
       viewerId ? this.viewerMoney(row.id, viewerId) : null,
       this.feeBps(),
     ]);
     if (!built) throw notFound();
     const { summary, state } = built;
     const isLifeguard = summary.role === "lifeguard";
+    // Unless the lifeguard allows it, a diver sees only their own payment (and the totals).
+    const hidePayments = summary.role === "diver" && !row.divers_see_payments;
 
     const votes = new Map((request?.votes ?? []).map((v) => [v.user_id, v]));
     const approverViews: Approver[] = approvers.map((a) => {
@@ -290,10 +294,11 @@ export class PoolViews {
       approvalsNeeded: approvalsNeeded(approvers.length),
       payout,
       // Phone numbers and emails are only for the lifeguard.
-      divers: divers.map((d) => toDiver(d, isLifeguard)),
+      divers: divers.filter((d) => !hidePayments || d.user_id === viewerId).map((d) => toDiver(d, isLifeguard)),
       pickYourName: row.pick_your_name,
       allowNotOnList: row.allow_not_on_list,
       diversCanShare: row.divers_can_share,
+      diversSeePayments: row.divers_see_payments,
       activity,
       yourRefund: refunded && mine && mine.paid > 0n ? toUsdc(mine.refunded ?? mine.paid) : null,
       yourReceiptRef: mine?.receiptRef ?? null,
@@ -331,13 +336,19 @@ export class PoolViews {
     return { ...request, votes, decliner };
   }
 
-  /** What happened in these pools, newest first, written for `viewerId`. */
-  async activity(poolIds: string[], viewerId: string | null, limit: number): Promise<ActivityItem[]> {
+  /**
+   * What happened in these pools, newest first, written for `viewerId`. In
+   * `hidePaymentsIn` (pools where the viewer is a diver who can't see others'
+   * payments) only the viewer's own payments are listed.
+   */
+  async activity(poolIds: string[], viewerId: string | null, limit: number, hidePaymentsIn: string[] = []): Promise<ActivityItem[]> {
     if (poolIds.length === 0) return [];
     const rows = await this.db.query<ActivityRow>(
       `select a.*, p.name as pool_name from activity a join pools p on p.id = a.pool_id
-       where a.pool_id = any($1::uuid[]) order by a.at desc, a.id limit $2`,
-      [poolIds, limit],
+       where a.pool_id = any($1::uuid[])
+         and not (a.kind = 'payment' and a.pool_id = any($3::uuid[]) and a.actor_user_id is distinct from $4)
+       order by a.at desc, a.id limit $2`,
+      [poolIds, limit, hidePaymentsIn, viewerId],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -348,6 +359,21 @@ export class PoolViews {
       actorName: row.actor_name,
       poolId: row.pool_id,
     }));
+  }
+
+  /**
+   * Of these pools, those where `viewerId` is a diver (not the lifeguard or an approver)
+   * and the lifeguard keeps payments private: there they see only their own.
+   */
+  async paymentsHiddenIn(rows: AppPoolRow[], viewerId: string): Promise<string[]> {
+    const candidates = rows.filter((r) => r.admin_user_id !== viewerId && !r.divers_see_payments);
+    if (candidates.length === 0) return [];
+    const approving = await this.db.query<{ pool_id: string }>(
+      "select pool_id from pool_approvers where user_id = $1 and pool_id = any($2::uuid[])",
+      [viewerId, candidates.map((r) => r.id)],
+    );
+    const approver = new Set(approving.map((a) => a.pool_id));
+    return candidates.filter((r) => !approver.has(r.id)).map((r) => r.id);
   }
 
   /** Profiles by user id. */

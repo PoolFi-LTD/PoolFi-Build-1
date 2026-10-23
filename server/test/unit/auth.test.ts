@@ -13,12 +13,12 @@ async function token(claims: Record<string, unknown>, options: { secret?: string
 describe("createAuthenticator", () => {
   it("returns the signed-in user", async () => {
     const jwt = await token({ sub: "user-1", email: "ada@example.com", aud: "authenticated" });
-    await expect(authenticate(`Bearer ${jwt}`)).resolves.toEqual({ id: "user-1", email: "ada@example.com", phone: null });
+    await expect(authenticate(`Bearer ${jwt}`)).resolves.toEqual({ id: "user-1", email: "ada@example.com", phone: null, sessionId: null, methods: [] });
   });
 
   it("reads a phone sign-in as E.164", async () => {
     const jwt = await token({ sub: "user-2", email: "", phone: "2348035550142", aud: "authenticated" });
-    await expect(authenticate(`Bearer ${jwt}`)).resolves.toEqual({ id: "user-2", email: null, phone: "+2348035550142" });
+    await expect(authenticate(`Bearer ${jwt}`)).resolves.toEqual({ id: "user-2", email: null, phone: "+2348035550142", sessionId: null, methods: [] });
   });
 
   it("says why a sign-in signed with keys can't be checked by a secret-only server", async () => {
@@ -32,6 +32,11 @@ describe("createAuthenticator", () => {
       status: 401,
       details: { reason: expect.stringContaining("AUTH_JWKS_URL") },
     });
+  });
+
+  it("reads the session and how it signed in", async () => {
+    const jwt = await token({ sub: "user-4", email: "Ada@Example.com", aud: "authenticated", session_id: "s-1", amr: [{ method: "password", timestamp: 1 }] });
+    await expect(authenticate(`Bearer ${jwt}`)).resolves.toMatchObject({ email: "ada@example.com", sessionId: "s-1", methods: ["password"] });
   });
 
   it("rejects a missing or malformed header", async () => {

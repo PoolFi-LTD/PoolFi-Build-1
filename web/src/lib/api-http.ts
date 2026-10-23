@@ -1,14 +1,11 @@
 /**
- * The real PoolFi API: sign-in with Supabase (a 6-digit code by email),
+ * The real PoolFi API: sign-in with Supabase (a password) and then a 6-digit code PoolFi emails,
  * everything else from the server at /api/v1/app, signed in with the Supabase session.
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { PoolFiApi } from "./api";
 import { ApiError } from "./errors";
 import type { Receipt, User } from "./types";
-
-/** The email the code was sent to, kept until it's checked (the verify screen can be reloaded). */
-const PENDING_KEY = "poolfi-signin-to";
 
 let supabaseClient: SupabaseClient | null = null;
 
@@ -25,38 +22,22 @@ function supabase(): SupabaseClient {
   return supabaseClient;
 }
 
-let pending: string | null = null;
-
-function remember(email: string) {
-  try {
-    sessionStorage.setItem(PENDING_KEY, email);
-  } catch {
-    // Storage can be off; the code can still be checked in this tab.
-  }
-  pending = email;
-}
-
-function pendingEmail(): string | null {
-  if (pending) return pending;
-  try {
-    return sessionStorage.getItem(PENDING_KEY);
-  } catch {
-    return null;
-  }
-}
-
 /** Supabase's sign-in errors, in words the screens can show. */
-function authError(error: { message: string; code?: string; status?: number }, checking: boolean): ApiError {
+function authError(error: { message: string; code?: string; status?: number }): ApiError {
   const code = error.code ?? "";
-  if (checking && (code === "otp_expired" || /expired|invalid/i.test(error.message))) {
-    return new ApiError("invalid_code", "That code isn't right or has expired. Check it or ask for a new one.");
+  if (code === "user_already_exists" || /already registered/i.test(error.message)) {
+    return new ApiError("account_exists", "There's already an account with this email. Sign in instead.");
+  }
+  if (code === "weak_password") {
+    return new ApiError("weak_password", "Choose a stronger password: at least 8 characters, not one that's easy to guess.");
   }
   if (code === "validation_failed" || code === "email_address_invalid") {
-    return new ApiError("invalid_address", "That doesn't look right. Check it and try again.");
+    return new ApiError("invalid_address", "That email doesn't look right. Check it and try again.");
   }
-  if (code === "over_email_send_rate_limit" || error.status === 429) {
-    return new ApiError("too_many_codes", "Too many codes asked for. Wait a minute and try again.");
+  if (code === "over_email_send_rate_limit" || code === "over_request_rate_limit" || error.status === 429) {
+    return new ApiError("too_many_tries", "Too many tries. Wait a minute and try again.");
   }
+  if (code === "same_password") return new ApiError("same_password", "That's your current password. Choose a new one.");
   return new ApiError(code || "auth_failed", error.message || "Sign-in didn't work. Try again.");
 }
 
@@ -65,7 +46,7 @@ async function accessToken(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
-async function request<T>(method: "GET" | "POST" | "PUT", path: string, body?: unknown, signedIn = true): Promise<T> {
+async function request<T>(method: "GET" | "POST" | "PUT" | "PATCH", path: string, body?: unknown, signedIn = true): Promise<T> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["content-type"] = "application/json";
   if (signedIn) {
@@ -75,7 +56,7 @@ async function request<T>(method: "GET" | "POST" | "PUT", path: string, body?: u
   }
   let response: Response;
   try {
-    response = await fetch(`/api/v1/app${path}`, {
+    response = await fetch(path.startsWith("/api/") ? path : `/api/v1/app${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -98,6 +79,18 @@ async function request<T>(method: "GET" | "POST" | "PUT", path: string, body?: u
 }
 
 const get = <T>(path: string) => request<T>("GET", path);
+/** The sign-in steps on the server (/api/v1/auth). */
+const auth = <T = unknown>(path: string, body?: unknown, signedIn = true) =>
+  request<T>("POST", `/api/v1/auth${path}`, body, signedIn);
+
+interface SignInStatus {
+  locked: boolean;
+  attemptsLeft: number;
+}
+
+function locked() {
+  return new ApiError("account_locked", "Your account is locked after too many wrong passwords. We emailed you a code to unlock it.");
+}
 const post = <T>(path: string, body?: unknown) => request<T>("POST", path, body);
 const pool = (id: string) => `/pools/${encodeURIComponent(id)}`;
 
@@ -107,6 +100,8 @@ export const httpApi: PoolFiApi = {
     try {
       return await get<User>("/me");
     } catch (error) {
+      // Signed in with a password but the emailed code isn't confirmed yet: not in.
+      if (error instanceof ApiError && error.code === "verification_required") return null;
       // A session the server no longer accepts counts as signed out.
       if (error instanceof ApiError && error.code === "unauthenticated") {
         await supabase().auth.signOut({ scope: "local" });
@@ -116,42 +111,70 @@ export const httpApi: PoolFiApi = {
     }
   },
 
-  async sendCode(email, redirectTo) {
-    const to = email.trim().toLowerCase();
-    const { error } = await supabase().auth.signInWithOtp({
-      email: to,
-      options: { shouldCreateUser: true, ...(redirectTo ? { emailRedirectTo: redirectTo } : {}) },
-    });
-    if (error) throw authError(error, false);
-    remember(to);
+  async signUp(email, password) {
+    const { data, error } = await supabase().auth.signUp({ email: email.trim().toLowerCase(), password });
+    if (error) throw authError(error);
+    if (!data.session) {
+      // Supabase's own email confirmation is on; PoolFi confirms the address with its code instead.
+      throw new ApiError("signup_unavailable", "Sign-up isn't open yet: Supabase's \"Confirm email\" setting must be off.");
+    }
+    await auth("/code");
   },
 
-  async verifyCode(code, recipient) {
-    const email = recipient?.trim().toLowerCase() || pendingEmail();
-    if (!email) throw new ApiError("code_expired", "Ask for a new code.");
-    const { error } = await supabase().auth.verifyOtp({ email, token: code, type: "email" });
-    if (error) throw authError(error, true);
-    try {
-      sessionStorage.removeItem(PENDING_KEY);
-    } catch {
-      // Nothing to clean up.
+  async signIn(email, password) {
+    const address = email.trim().toLowerCase();
+    const before = await auth<SignInStatus>("/status", { email: address }, false);
+    if (before.locked) throw locked();
+    const { error } = await supabase().auth.signInWithPassword({ email: address, password });
+    if (error) {
+      if (error.code !== "invalid_credentials") throw authError(error);
+      const after = await auth<SignInStatus>("/failed", { email: address }, false);
+      if (after.locked) throw locked();
+      throw new ApiError(
+        "wrong_password",
+        `Wrong email or password. ${after.attemptsLeft} ${after.attemptsLeft === 1 ? "try" : "tries"} left before we lock the account to keep it safe.`,
+        { attemptsLeft: after.attemptsLeft },
+      );
     }
-    pending = null;
     try {
-      const user = await get<User>("/me");
-      return { needsProfile: !user.firstName };
-    } catch (error) {
-      // Supabase accepted the code but PoolFi's server didn't accept the sign-in: say why,
-      // so a screenshot is enough to fix the server's settings.
-      if (error instanceof ApiError && error.code === "unauthenticated") {
-        const reason = typeof error.details?.reason === "string" ? ` (${error.details.reason})` : "";
-        throw new ApiError("signin_rejected", `Your code was right, but PoolFi couldn't confirm the sign-in${reason}.`);
-      }
-      throw error;
+      await auth("/code");
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "account_locked") await supabase().auth.signOut({ scope: "local" });
+      throw e;
     }
+  },
+
+  async verifyCode(code) {
+    await auth("/code/verify", { code });
+    const user = await get<User>("/me");
+    return { needsProfile: !user.firstName };
+  },
+
+  resendCode: () => auth("/code"),
+  unlockAccount: (email, code) => auth("/unlock", { email: email.trim().toLowerCase(), code }, false),
+  resendUnlockCode: (email) => auth("/unlock/code", { email: email.trim().toLowerCase() }, false),
+
+  async requestPasswordReset(email) {
+    const { error } = await supabase().auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: new URL("/reset-password", window.location.origin).toString(),
+    });
+    if (error) throw authError(error);
+  },
+
+  async setNewPassword(password) {
+    if (!(await accessToken())) {
+      throw new ApiError("reset_link_expired", "This reset link has expired or was already used. Ask for a new one.");
+    }
+    const { error } = await supabase().auth.updateUser({ password });
+    if (error) throw authError(error);
+    await auth("/password-reset/done");
+    // Everyone signs in again with the new password (and a new code).
+    await supabase().auth.signOut({ scope: "global" });
   },
 
   saveProfile: (profile) => request<User>("PUT", "/me/profile", profile),
+  getAchievements: () => get("/me/achievements"),
+  savePreferences: (preferences) => request("PUT", "/me/preferences", preferences),
 
   async signOut() {
     await supabase().auth.signOut();
@@ -160,12 +183,17 @@ export const httpApi: PoolFiApi = {
   getHome: () => get("/home"),
   listPools: () => get("/pools"),
   listActivity: () => get("/activity"),
+  getNotifications: () => get("/notifications"),
+  markNotificationsRead: async () => {
+    await post("/notifications/read");
+  },
   listContacts: () => get("/contacts"),
 
   getFeeBps: async () => (await request<{ bps: number }>("GET", "/fee", undefined, false)).bps,
   createPool: (input) => post("/pools", input),
   getPool: (id) => get(pool(id)),
   addDivers: (id, divers) => post(`${pool(id)}/divers`, { divers }),
+  updatePoolSettings: (id, settings) => request("PATCH", `${pool(id)}/settings`, settings),
   remindUnpaid: (id) => post(`${pool(id)}/reminders`),
   getRecord: (id) => get(`${pool(id)}/record`),
 

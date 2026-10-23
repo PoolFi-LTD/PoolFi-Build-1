@@ -23,6 +23,8 @@ interface Message {
   preview: string;
   title: string;
   paragraphs: string[];
+  /** A one-time code shown large, under the paragraphs. */
+  code?: string;
   details?: [string, string][];
   button?: { label: string; path: string };
   footer: string;
@@ -79,6 +81,7 @@ function render(m: Message, ctx: EmailContext): Rendered {
 <tr><td style="padding:30px 28px 28px">
 <h1 style="margin:0 0 14px;font-size:23px;line-height:1.3;letter-spacing:-0.4px;color:${INK}">${escapeHtml(m.title)}</h1>
 ${m.paragraphs.map((p) => `<p style="margin:0 0 16px;font-size:15px;line-height:1.55;color:${INK}">${escapeHtml(p)}</p>`).join("\n")}
+${m.code ? `<div style="margin:4px 0 20px;padding:18px 8px;border-radius:16px;background:#eff3fc;text-align:center;font-size:32px;font-weight:700;letter-spacing:8px;color:#052698">${escapeHtml(m.code)}</div>` : ""}
 ${details}${button}
 </td></tr>
 <tr><td style="padding:0 28px 26px;color:${MUTED};font-size:12px;line-height:1.5">${escapeHtml(m.footer)}</td></tr>
@@ -88,6 +91,7 @@ ${details}${button}
     m.title,
     "",
     ...m.paragraphs.flatMap((p) => [p, ""]),
+    ...(m.code ? [m.code, ""] : []),
     ...(m.details?.length ? [...m.details.map(([label, value]) => `${label}: ${value}`), ""] : []),
     ...(url ? [`${m.button?.label}: ${url}`, ""] : []),
     "--",
@@ -96,27 +100,77 @@ ${details}${button}
   return { subject: oneLine(m.subject), html, text };
 }
 
+/** The payment receipt, laid out like the app's receipt (the "Receipt" design). */
 export function receiptEmail(
   p: { poolName: string; poolEmoji: string; lifeguardName: string; diverName: string; amount: number; ref: string; paidAt: Date },
   ctx: EmailContext,
 ): Rendered {
-  return render(
-    {
-      subject: `Receipt: ${usdc(p.amount)} paid into ${p.poolName}`,
-      preview: `Reference ${p.ref}. Keep this for your records.`,
-      title: `You paid ${usdc(p.amount)} ✅`,
-      paragraphs: [`Your share is in ${p.poolEmoji} ${p.poolName}, held safely until the goal is met. ${p.lifeguardName} can see you've paid.`],
-      details: [
-        ["Paid as", p.diverName],
-        ["Amount", usdc(p.amount)],
-        ["Date", dateTime(p.paidAt, ctx.timeZone)],
-        ["Reference", p.ref],
-      ],
-      button: { label: "View receipt", path: `/receipts/${encodeURIComponent(p.ref)}` },
-      footer: `${FOOTER} Anyone you show this receipt to can check it on PoolFi with its reference.`,
-    },
-    ctx,
-  );
+  const subject = `Receipt: ${usdc(p.amount)} paid into ${p.poolName}`;
+  const base = ctx.appUrl?.replace(/\/$/, "") ?? null;
+  const checkUrl = base ? `${base}/r/${encodeURIComponent(p.ref)}` : null;
+  const receiptUrl = base ? `${base}/receipts/${encodeURIComponent(p.ref)}` : null;
+  const host = base ? base.replace(/^https?:\/\//, "") : null;
+  const [whole, cents] = p.amount.toFixed(2).split(".");
+  const rows: [string, string][] = [
+    ["Pool", `${p.poolEmoji} ${p.poolName}`],
+    ["Lifeguard", p.lifeguardName],
+    ["Paid by", p.diverName],
+    ["Method", "USDC from PoolFi wallet"],
+    ["Date", dateTime(p.paidAt, ctx.timeZone)],
+    ["Reference", p.ref],
+  ];
+  const row = ([label, value]: [string, string]) =>
+    `<tr><td style="padding:9px 0;color:${MUTED};font-size:15px">${escapeHtml(label)}</td><td align="right" style="padding:9px 0;color:${INK};font-size:15px;font-weight:600">${escapeHtml(value)}</td></tr>`;
+  const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(subject)}</title></head>
+<body style="margin:0;padding:0;background:${BLUE};font-family:${FONT};color:${INK}">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">Reference ${escapeHtml(p.ref)}. Keep this for your records.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BLUE};padding:32px 14px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px">
+<tr><td align="center" style="color:#ffffff;font-size:28px;font-weight:700;letter-spacing:-0.5px">PoolFi</td></tr>
+<tr><td align="center" style="color:#ffffff;opacity:0.85;font-size:16px;padding:6px 0 26px">Payment receipt</td></tr>
+<tr><td style="background:#ffffff;border-radius:26px;padding:30px 26px 26px">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr><td align="center"><div style="width:64px;height:64px;line-height:64px;border-radius:50%;background:#12b76a;color:#ffffff;font-size:34px;font-weight:700;text-align:center">&#10003;</div></td></tr>
+    <tr><td align="center" style="padding-top:18px;font-size:44px;font-weight:800;letter-spacing:-2px;color:${INK}">${escapeHtml(whole ?? "0")}.${escapeHtml(cents ?? "00")}<span style="font-size:20px;font-weight:700;letter-spacing:0;margin-left:6px">USDC</span></td></tr>
+    <tr><td align="center" style="padding:6px 0 18px;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-size:24px;color:${BLUE}">paid to ${escapeHtml(p.poolName)}</td></tr>
+    <tr><td style="border-top:2px dashed ${LINE};padding-top:8px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        ${rows.map(row).join("")}
+        <tr><td style="padding:9px 0;color:${MUTED};font-size:15px">Status</td><td align="right" style="padding:9px 0"><span style="display:inline-block;padding:5px 12px;border-radius:999px;background:#ecfdf3;color:#067647;font-size:14px;font-weight:600">&#10003; Confirmed</span></td></tr>
+      </table>
+    </td></tr>
+    ${
+      checkUrl
+        ? `<tr><td style="padding-top:16px"><div style="background:#eff3fc;border-radius:18px;padding:16px 18px">
+      <div style="color:#052698;font-size:16px;font-weight:700">Is this receipt real?</div>
+      <div style="padding-top:4px;font-size:14px"><a href="${escapeHtml(checkUrl)}" style="color:${BLUE};text-decoration:none">Visit ${escapeHtml(`${host}/r/${p.ref}`)}</a></div>
+      <div style="padding-top:6px;color:${MUTED};font-size:13px;line-height:1.5">Bank screenshots can be edited. PoolFi receipts can always be checked.</div>
+    </div></td></tr>`
+        : ""
+    }
+    ${
+      receiptUrl
+        ? `<tr><td align="center" style="padding-top:20px"><a href="${escapeHtml(receiptUrl)}" style="display:inline-block;background:${BLUE};color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:14px 24px;border-radius:999px">View or download the receipt</a></td></tr>`
+        : ""
+    }
+  </table>
+</td></tr>
+${host ? `<tr><td align="center" style="color:#ffffff;font-size:16px;font-weight:600;padding-top:22px">${escapeHtml(host)}</td></tr>` : ""}
+</table></td></tr></table>
+</body></html>`;
+  const text = [
+    `You paid ${usdc(p.amount)} to ${p.poolName}`,
+    "",
+    ...rows.map(([label, value]) => `${label}: ${value}`),
+    "Status: Confirmed",
+    "",
+    ...(checkUrl ? [`Is this receipt real? Check it at ${checkUrl}`, ""] : []),
+    ...(receiptUrl ? [`View or download the receipt: ${receiptUrl}`, ""] : []),
+    "--",
+    `${FOOTER} Anyone you show this receipt to can check it on PoolFi with its reference.`,
+  ].join("\n");
+  return { subject, html, text };
 }
 
 export function goalMetEmail(p: { poolName: string; poolId: string; raised: number; approvers: number }, ctx: EmailContext): Rendered {
@@ -232,6 +286,38 @@ export function refundEmail(p: { poolName: string; amount: number }, ctx: EmailC
       ],
       button: { label: "Open your wallet", path: "/wallet" },
       footer: FOOTER,
+    },
+    ctx,
+  );
+}
+
+export function signInCodeEmail(p: { code: string; minutes: number }, ctx: EmailContext): Rendered {
+  return render(
+    {
+      subject: `Your PoolFi code is ${p.code}`,
+      preview: `Use it in the next ${p.minutes} minutes to finish signing in.`,
+      title: "Finish signing in",
+      paragraphs: ["Your password was right. Type this code into PoolFi to finish signing in."],
+      code: p.code,
+      footer: `It works once and expires in ${p.minutes} minutes. Nobody from PoolFi will ever ask you for it. If you didn't just sign in, change your password: someone may know it.`,
+    },
+    ctx,
+  );
+}
+
+export function unlockCodeEmail(p: { email: string; code: string; minutes: number; attempts: number }, ctx: EmailContext): Rendered {
+  return render(
+    {
+      subject: "Your PoolFi account is locked",
+      preview: `After ${p.attempts} wrong passwords. Use the code inside to unlock it.`,
+      title: "We locked your account to keep it safe",
+      paragraphs: [
+        `Someone typed the wrong password ${p.attempts} times in a row, so we've paused sign-ins to your account.`,
+        "If it was you, type this code into PoolFi to unlock it, then sign in again. If you've forgotten your password, choose \"Forgot password\" instead.",
+      ],
+      code: p.code,
+      button: { label: "Unlock my account", path: `/signup/unlock?to=${encodeURIComponent(p.email)}` },
+      footer: `The code expires in ${p.minutes} minutes. If it wasn't you, your money is safe: nobody can sign in without this code.`,
     },
     ctx,
   );

@@ -51,7 +51,11 @@ export const CreatePoolInput = z.object({
   pickYourName: z.boolean(),
   allowNotOnList: z.boolean(),
   diversCanShare: z.boolean(),
+  /** Divers see each other's payments. Off: each sees only their own, and the totals. */
+  diversSeePayments: z.boolean().default(false),
 });
+
+export const PoolSettingsInput = z.object({ diversSeePayments: z.boolean() });
 
 export const AddDiversInput = z.object({ divers: z.array(NewDiverInput).min(1).max(1000) });
 export const PayoutInput = z.object({ destination: z.enum(["wallet", "bank"]) });
@@ -119,8 +123,8 @@ export class AppPools {
           const { rows } = await client.query<AppPoolRow>(
             `insert into pools (contract_id, chain_pool_id, admin_user_id, name, goal_amount, deadline, create_tx_hash,
                code, emoji, type, share_amount, expected_count, fee_bps, fee_covered, pick_your_name, allow_not_on_list,
-               divers_can_share)
-             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) returning *`,
+               divers_can_share, divers_see_payments)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) returning *`,
             [
               this.contracts.pool,
               chainPoolId.toString(),
@@ -139,6 +143,7 @@ export class AppPools {
               input.pickYourName,
               input.allowNotOnList,
               input.diversCanShare,
+              input.diversSeePayments,
             ],
           );
           const pool = rows[0];
@@ -176,6 +181,16 @@ export class AppPools {
 
   async list(user: AuthUser) {
     return (await this.views.summaries(await this.views.visible(user.id), user.id)).map((b) => b.summary);
+  }
+
+  /** The lifeguard changes who can see what: whether divers see each other's payments. */
+  async updateSettings(user: AuthUser, poolId: string, input: z.infer<typeof PoolSettingsInput>): Promise<PoolDetail> {
+    const row = await this.lifeguardsPool(user, poolId, "Only the lifeguard can change the pool's settings.");
+    const [updated] = await this.db.query<AppPoolRow>(
+      "update pools set divers_see_payments = $2 where id = $1 returning *",
+      [row.id, input.diversSeePayments],
+    );
+    return this.views.detail(updated ?? row, user.id);
   }
 
   async addDivers(user: AuthUser, poolId: string, input: z.infer<typeof AddDiversInput>): Promise<PoolDetail> {
@@ -225,11 +240,11 @@ export class AppPools {
       }
       return { count: reminded, recipients };
     });
-    await this.notify.reminders(row, recipients, appUrl);
+    const emailed = await this.notify.reminders(row, recipients, appUrl);
     const link = `${appUrl.replace(/\/$/, "")}/p/${row.code}`;
     return {
       count,
-      emailed: recipients.length,
+      emailed,
       message: `Reminder 👋 If you haven't paid your ${toUsdc(row.share_amount).toFixed(2)} USDC for ${row.name} yet, here's the link: ${link}`,
     };
   }
@@ -283,8 +298,9 @@ export class AppPools {
         allowNotOnList: row.allow_not_on_list,
       },
       lifeguard: { name: nameOf(lifeguard), avatar: lifeguard?.avatar ?? null },
-      // Names only: contacts are never shown on the public page.
-      names: divers.map((d) => ({ id: d.id, name: d.name, paid: d.paid_at !== null })),
+      // Names only: contacts are never shown on the public page, nor who has paid
+      // unless the lifeguard lets divers see payments.
+      names: divers.map((d) => ({ id: d.id, name: d.name, paid: row.divers_see_payments && d.paid_at !== null })),
     };
   }
 

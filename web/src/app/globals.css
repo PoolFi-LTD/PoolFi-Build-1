@@ -216,6 +216,7 @@ p {
 .input.is-invalid { border-color: var(--red-200); }
 textarea.input { height: auto; min-height: 140px; padding: 14px 16px; resize: vertical; line-height: 1.5; }
 .field-error { color: var(--red); font-size: 13px; }
+.field-hint { color: var(--slate); font-size: 13px; }
 
 /* Toggle */
 .toggle {
@@ -385,3 +386,7 @@ button.banner { width: 100%; border: 0; cursor: pointer; text-align: left; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
 }
+
+/* New-notification markers: a count in the menu, a dot on the bell */
+.count-badge { margin-left: auto; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; display: inline-grid; place-items: center; background: var(--blue); color: var(--white); font-size: 12px; font-weight: 600; }
+.dot-badge { position: absolute; top: -2px; right: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 2px var(--white); }

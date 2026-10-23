@@ -7,6 +7,10 @@ export interface AuthUser {
   email: string | null;
   /** E.164, when the person signed in with their phone. */
   phone: string | null;
+  /** The sign-in session this token belongs to; stays the same when the token is refreshed. */
+  sessionId: string | null;
+  /** How the session was signed in: "password", "otp", "magiclink", "recovery"… */
+  methods: string[];
 }
 
 export type Authenticator = (authorization: string | undefined) => Promise<AuthUser>;
@@ -44,7 +48,16 @@ export function createAuthenticator(
       }
       if (!payload.sub) throw new Error("token has no subject");
       const phone = typeof payload.phone === "string" && payload.phone ? `+${payload.phone.replace(/^\+/, "")}` : null;
-      return { id: payload.sub, email: typeof payload.email === "string" && payload.email ? payload.email : null, phone };
+      const amr = Array.isArray(payload.amr) ? (payload.amr as unknown[]) : [];
+      return {
+        id: payload.sub,
+        email: typeof payload.email === "string" && payload.email ? payload.email.toLowerCase() : null,
+        phone,
+        sessionId: typeof payload.session_id === "string" ? payload.session_id : null,
+        methods: amr.flatMap((m) =>
+          typeof m === "string" ? [m] : m && typeof m === "object" && "method" in m ? [String(m.method)] : [],
+        ),
+      };
     } catch (error) {
       // The reason names the check that failed (issuer, audience, expiry…), never the token.
       const reason = error instanceof Error ? error.message : String(error);

@@ -10,6 +10,7 @@ import { AppPools } from "./app/pools.ts";
 import { Deposits } from "./deposits.ts";
 import { Pools } from "./pools.ts";
 import { RefundJob, type Logger } from "./refunds.ts";
+import { TwoStep } from "./two-step.ts";
 import { Wallets } from "./wallets.ts";
 
 export function createServices(
@@ -17,7 +18,8 @@ export function createServices(
   log: Logger,
 ) {
   const contract = new PoolContract(chain);
-  const notify = new Notifications(db, mailer ?? createMailer(config.email, log), {
+  const mail = mailer ?? createMailer(config.email, log);
+  const notify = new Notifications(db, mail, {
     appUrl: config.appUrl,
     timeZone: config.email?.timeZone ?? "Africa/Lagos",
   });
@@ -27,6 +29,15 @@ export function createServices(
   return {
     wallets,
     deposits,
+    // Password, then an emailed code (POST /v1/auth/...).
+    twoStep: new TwoStep(
+      db,
+      mail,
+      config.walletEncryption.key,
+      { appUrl: config.appUrl, timeZone: config.email?.timeZone ?? "Africa/Lagos" },
+      // Without Resend (local development only), codes go to the log.
+      config.email || mailer ? null : log,
+    ),
     pools: new Pools(db, chain, contract, wallets),
     refunds: new RefundJob(db, chain, contract, wallets, config.refundJob.concurrency, log, notify),
     // What the web app's screens use (/v1/app).

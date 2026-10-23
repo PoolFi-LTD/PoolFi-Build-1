@@ -11,6 +11,11 @@ import { LoadingState } from "./ui";
 interface Session {
   user: User | null;
   loading: boolean;
+  /** New notifications since the inbox was last read. */
+  unread: number;
+  setUnread: (n: number) => void;
+  /** Asks the server again; each signed-in page does when it opens. */
+  refreshUnread: () => void;
   refresh: () => Promise<User | null>;
   signOut: () => Promise<void>;
 }
@@ -21,6 +26,7 @@ const ToastContext = createContext<(message: string, icon?: string) => void>(() 
 export function Providers({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [unread, setUnread] = useState(0);
   const [toast, setToast] = useState<{ message: string; icon: string; id: number; leaving?: boolean } | null>(null);
 
   const refresh = useCallback(async () => {
@@ -95,8 +101,17 @@ export function Providers({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("click", onClick, true);
   }, []);
 
+  const signedIn = Boolean(user);
+  const refreshUnread = useCallback(() => {
+    if (!signedIn) return;
+    api.getNotifications().then(
+      (n) => setUnread(n.unread),
+      () => {},
+    );
+  }, [signedIn]);
+
   return (
-    <SessionContext.Provider value={{ user, loading, refresh, signOut }}>
+    <SessionContext.Provider value={{ user, loading, refresh, signOut, unread: user ? unread : 0, setUnread, refreshUnread }}>
       <ToastContext.Provider value={showToast}>
         {children}
         <Splash />

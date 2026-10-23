@@ -21,7 +21,7 @@ The API reads the server's settings. Locally, link them in once: `ln -s ../serve
 
 While Supabase isn't set up:
 
-Any code of the right length works (6 digits unless `NEXT_PUBLIC_SIGNIN_CODE_LENGTH` says otherwise). No message is sent.
+Seeded accounts use the password `poolfi123`; any 6-digit code then works. No message is sent. Five wrong passwords lock the account, and any 6-digit code unlocks it.
 
 | Who | Email | Sees |
 |---|---|---|
@@ -45,7 +45,6 @@ In `web/.env.local` (or Vercel's environment variables). `NEXT_PUBLIC_` values a
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | none | Your Supabase project URL. Setting it switches the app from sample data to the real backend |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | none | The project's anon (publishable) key |
-| `NEXT_PUBLIC_SIGNIN_CODE_LENGTH` | `6` | Digits in the emailed sign-in code. Must match Supabase's **Email OTP length** (6 to 10) |
 | `NEXT_PUBLIC_APP_URL` | the current site | Base for invite links, receipt QR codes and statement links |
 | `NEXT_PUBLIC_STELLAR_NETWORK` | `testnet` | On `testnet` the wallet shows an "Add 10 test USDC" button |
 | `NEXT_PUBLIC_NGN_PER_USDC` | `1400` | Rate used to turn the design's Naira presets into USDC |
@@ -136,7 +135,7 @@ Every screen talks to `api` in `src/lib/api.ts` and nothing else:
 export const api: PoolFiApi = process.env.NEXT_PUBLIC_SUPABASE_URL ? httpApi : sampleApi;
 ```
 
-- `httpApi` (`src/lib/api-http.ts`) signs in with Supabase (a 6-digit code by email) and calls the server at `/api/v1/app` with the Supabase session. The server's routes are in `../server/src/app-routes.ts`.
+- `httpApi` (`src/lib/api-http.ts`) signs in with a password (Supabase) and then a 6-digit code PoolFi emails and calls the server at `/api/v1/app` with the Supabase session. The server's routes are in `../server/src/app-routes.ts`.
 - `sampleApi` (`src/lib/sample.ts`) is the sample data. Once the real backend is running, delete it and the switch.
 
 The types the screens use (`src/lib/types.ts`) come from the server's `src/api-types.ts`, so the two can't drift apart.
@@ -150,7 +149,8 @@ The types the screens use (`src/lib/types.ts`) come from the server's `src/api-t
 | Route | Screen |
 |---|---|
 | `/` | Welcome |
-| `/signup`, `/signup/verify`, `/signup/profile` | Sign up or log in, 6-digit code, profile (name plus emoji or photo) |
+| `/signup`, `/signup/verify`, `/signup/profile` | Sign up or sign in with email and password, the emailed 6-digit code, profile (name plus emoji or photo) |
+| `/signup/unlock`, `/forgot`, `/reset-password` | Unlocking after five wrong passwords, asking for a reset link, choosing a new password |
 | `/home` | Balance, alerts, open pools, recent activity |
 | `/create` | Create a pool in 8 steps: type, name, amount and fee, details, deadline, approvers, add people, review |
 | `/pools` | My pools, open and closed |

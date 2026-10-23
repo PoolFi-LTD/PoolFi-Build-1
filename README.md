@@ -197,6 +197,24 @@ The screens in `web/` use `/v1/app`, shaped as `server/src/api-types.ts` describ
 | POST | `/v1/app/wallet/deposits` | `{ amount }`: test USDC (testnet) |
 | GET | `/v1/app/receipts/:ref` | Public: checks a receipt |
 | GET | `/v1/app/fee` | Public: the contract's payout fee in basis points |
+| PATCH | `/v1/app/pools/:id/settings` | Lifeguard: `{ diversSeePayments }`. Off (the default), each diver sees only their own payment and the totals |
+| GET, POST | `/v1/app/notifications`, `/v1/app/notifications/read` | The notifications inbox with unread items; marking it read |
+| GET, PUT | `/v1/app/me/achievements`, `/v1/app/me/preferences` | Streak and badges for the Settings screen; `{ remindersOn }` |
+
+### Sign-in
+
+Signing in takes a password and then a code. Supabase checks the password in the browser; PoolFi then emails a 6-digit code (through Resend), and only a session whose code is confirmed can use `/v1/*`.
+
+| Method | Path | Does |
+|---|---|---|
+| POST | `/v1/auth/status` | `{ email }`: whether the account is locked, and how many wrong passwords are left |
+| POST | `/v1/auth/failed` | `{ email }`: counts a wrong password. The fifth in a row (within 24 hours) locks the account and emails an unlock code |
+| POST | `/v1/auth/code` | After the right password: emails the code (one every 30 seconds, six an hour) |
+| POST | `/v1/auth/code/verify` | `{ code }`: confirms the session. A code expires after 10 minutes or five wrong tries |
+| POST | `/v1/auth/unlock/code`, `/v1/auth/unlock` | A new unlock code; `{ email, code }` unlocks the account |
+| POST | `/v1/auth/password-reset/done` | After a new password from the emailed reset link: unlocks the account, and every device must confirm a new code |
+
+Sessions Supabase opens without the password (an emailed link or code) can never be confirmed, so the password and the inbox are both needed.
 
 ### Emails
 
@@ -253,8 +271,9 @@ One Vercel project serves the web app and the API: `web/src/app/api/[...path]/ro
 ### 1. Supabase
 
 - **Database.** Project Settings → Database → Connect → **Session pooler** (port 5432). That's `DATABASE_URL`, with `?sslmode=require&uselibpqcompat=true` added so the connection is encrypted. Not the transaction pooler (port 6543): the server uses session locks. Not the direct connection either: it's IPv6-only, and Vercel can't reach it.
-- **Email sign-in, sent through Resend.** Authentication → Sign In / Providers → Email on, with **Email OTP Expiration** `600` (codes and links last 10 minutes). Only the organisation's Owner or an Administrator can change these settings. Authentication → Emails → **SMTP Settings** → enable custom SMTP: host `smtp.resend.com`, port `465`, username `resend`, password your Resend API key, sender email an address on your Resend-verified domain (e.g. `noreply@thepoolfi.com`), sender name `PoolFi`. Then under Authentication → Emails → Templates, paste [docs/supabase-sign-in-email.html](docs/supabase-sign-in-email.html) into **Confirm sign up** (new accounts), subject `Your PoolFi code is {{ .Token }}`. Paste [docs/supabase-magic-link-email.html](docs/supabase-magic-link-email.html) into **Magic link or OTP** (returning accounts), subject `Your PoolFi sign-in link`; keep `{{ .ConfirmationURL }}` in the template. New accounts can enter the emailed code, while returning users can tap the branded sign-in link. With custom SMTP, raise the email limit under Authentication → Rate Limits (it starts at 30 an hour). The app's code boxes follow `NEXT_PUBLIC_SIGNIN_CODE_LENGTH` (default 6), which must equal **Email OTP Length**.
-- **Site URL and redirects.** Authentication → URL Configuration → set the Site URL to your domain and add `https://app.thepoolfi.com/auth/callback**` to the allowed Redirect URLs. The app sends magic links back through this route, then sends returning users to the dashboard and new users to profile setup.
+- **Sign-in: passwords.** Signing in is two steps: the password (checked by Supabase), then a 6-digit code that PoolFi itself emails through Resend. Five wrong passwords in a row lock the account until the code emailed to its owner unlocks it, and PoolFi only accepts a session once its code is confirmed. In Supabase: Authentication → Sign In / Providers → **Email** on, **Confirm email off** (PoolFi confirms the address with its own code), and **Minimum password length** `8`. Only the organisation's Owner or an Administrator can change these.
+- **Password resets: the only emailed link.** Authentication → Emails → **SMTP Settings** → enable custom SMTP so Supabase's emails go through Resend too: host `smtp.resend.com`, port `465`, username `resend`, password your Resend API key, sender `noreply@thepoolfi.com`, sender name `PoolFi`. Under Authentication → Emails → Templates → **Reset password**, paste [docs/supabase-reset-password-email.html](docs/supabase-reset-password-email.html) with the subject `Reset your PoolFi password`. The other templates aren't used.
+- **Site URL and redirects.** Authentication → URL Configuration → set the Site URL to your domain, and add `https://app.thepoolfi.com/reset-password` to the allowed Redirect URLs (and `http://localhost:3000/reset-password` for local development). The reset link opens that page to choose a new password.
 - **Keys.** Project Settings → API: the project URL and the anon (publishable) key, for the web app. To check sign-ins, the server needs `AUTH_JWKS_URL=https://<project>.supabase.co/auth/v1/.well-known/jwks.json` (projects on JWT signing keys, the default for new ones), or the project's legacy JWT secret as `AUTH_JWT_SECRET`. Either way set `AUTH_JWT_ISSUER=https://<project>.supabase.co/auth/v1` and `AUTH_JWT_AUDIENCE=authenticated`.
 
 ### 2. Tables
@@ -288,7 +307,6 @@ Migration `004_lock_tables.sql` closes PoolFi's tables to Supabase's public Data
 | `CRON_SECRET` | A long random string (`openssl rand -hex 32`) |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Your Resend key, and the sender on your Resend-verified domain, e.g. `PoolFi <noreply@thepoolfi.com>`. Optional: `EMAIL_REPLY_TO`, and `EMAIL_TIME_ZONE` (default `Africa/Lagos`) |
 | `APP_URL` | Optional: the site's address for links in reminders, e.g. `https://thepoolfi.com` (defaults to the Vercel production domain) |
-| `NEXT_PUBLIC_SIGNIN_CODE_LENGTH` | Supabase's **Email OTP Length** (`6` to `10`) |
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | From Supabase. Setting these switches the app from sample data to the real backend |
 
 `NEXT_PUBLIC_` values are built into the page, so redeploy after changing them.

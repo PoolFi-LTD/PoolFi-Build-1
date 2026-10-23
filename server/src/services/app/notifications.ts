@@ -116,8 +116,18 @@ export class Notifications {
     ]);
   }
 
-  async reminders(row: AppPoolRow, recipients: ReminderRecipient[], appUrl: string | null) {
-    if (recipients.length === 0) return;
+  /** Emails the reminders; returns how many were sent. */
+  async reminders(row: AppPoolRow, allRecipients: ReminderRecipient[], appUrl: string | null): Promise<number> {
+    // People with a PoolFi account who turned deadline reminders off don't get them.
+    const off = allRecipients.length
+      ? await this.db.query<{ email: string }>(
+          "select lower(email) as email from users where lower(email) = any($1::text[]) and not reminders_on",
+          [allRecipients.map((r) => r.email.toLowerCase())],
+        )
+      : [];
+    const muted = new Set(off.map((o) => o.email));
+    const recipients = allRecipients.filter((r) => !muted.has(r.email.toLowerCase()));
+    if (recipients.length === 0) return 0;
     const ctx = this.context(appUrl);
     const lifeguardName = nameOf((await this.people([row.admin_user_id])).get(row.admin_user_id));
     // One a day per person at most, even if the lifeguard taps Remind again.
@@ -135,6 +145,7 @@ export class Notifications {
         }, ctx)),
       ),
     );
+    return recipients.length;
   }
 
   /** Tells refunded PoolFi users their money is back. */

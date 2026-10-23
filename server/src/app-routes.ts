@@ -2,14 +2,22 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { AuthUser } from "./auth.ts";
 import type { Config } from "./config.ts";
 import { parse } from "./parse.ts";
-import { DepositInput, ProfileInput } from "./services/app/account.ts";
-import { AddDiversInput, CreatePoolInput, DeclineInput, PayInput, PayoutInput } from "./services/app/pools.ts";
+import { DepositInput, PreferencesInput, ProfileInput } from "./services/app/account.ts";
+import { AddDiversInput, CreatePoolInput, DeclineInput, PayInput, PayoutInput, PoolSettingsInput } from "./services/app/pools.ts";
 import type { Services } from "./services/index.ts";
 
 /** Room for a profile photo or a long member list; everything else keeps the app's 64 KB limit. */
 const LARGE_BODY = 512 * 1024;
 
 type Params = { Params: { id: string } };
+
+/** Where links in messages point: the configured address, else the address this request came to. */
+export function requestAppUrl(config: Config, request: FastifyRequest): string {
+  if (config.appUrl) return config.appUrl;
+  const host = request.headers["x-forwarded-host"] ?? request.headers.host;
+  const proto = request.headers["x-forwarded-proto"] ?? "https";
+  return `${String(proto).split(",")[0]}://${String(host).split(",")[0]}`;
+}
 
 /**
  * The web app's API: one endpoint per thing a screen asks for, shaped as
@@ -20,13 +28,7 @@ export function appRoutes(
   signedIn: (request: FastifyRequest) => Promise<AuthUser>,
   config: Config,
 ) {
-  /** Where links in messages point: the configured address, else the address this request came to. */
-  const appUrl = (request: FastifyRequest) => {
-    if (config.appUrl) return config.appUrl;
-    const host = request.headers["x-forwarded-host"] ?? request.headers.host;
-    const proto = request.headers["x-forwarded-proto"] ?? "https";
-    return `${String(proto).split(",")[0]}://${String(host).split(",")[0]}`;
-  };
+  const appUrl = (request: FastifyRequest) => requestAppUrl(config, request);
 
   return async (app: FastifyInstance) => {
     // You
@@ -34,8 +36,17 @@ export function appRoutes(
     app.put("/me/profile", { bodyLimit: LARGE_BODY }, async (request) =>
       account.saveProfile(await signedIn(request), parse(ProfileInput, request.body)),
     );
+    app.get("/me/achievements", async (request) => account.achievements(await signedIn(request)));
+    app.put("/me/preferences", async (request) =>
+      account.savePreferences(await signedIn(request), parse(PreferencesInput, request.body)),
+    );
     app.get("/home", async (request) => account.home(await signedIn(request)));
     app.get("/activity", async (request) => account.activity(await signedIn(request)));
+    app.get("/notifications", async (request) => account.notifications(await signedIn(request)));
+    app.post("/notifications/read", async (request) => {
+      await account.markNotificationsRead(await signedIn(request));
+      return { read: true };
+    });
     app.get("/contacts", async (request) => account.contacts(await signedIn(request)));
 
     // Pools
@@ -46,6 +57,9 @@ export function appRoutes(
       return reply.status(201).send(pool);
     });
     app.get<Params>("/pools/:id", async (request) => pools.get(await signedIn(request), request.params.id));
+    app.patch<Params>("/pools/:id/settings", async (request) =>
+      pools.updateSettings(await signedIn(request), request.params.id, parse(PoolSettingsInput, request.body)),
+    );
     app.post<Params>("/pools/:id/divers", { bodyLimit: LARGE_BODY }, async (request) =>
       pools.addDivers(await signedIn(request), request.params.id, parse(AddDiversInput, request.body)),
     );

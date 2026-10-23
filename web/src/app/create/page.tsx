@@ -73,6 +73,7 @@ interface Draft {
   pickYourName: boolean;
   allowNotOnList: boolean;
   diversCanShare: boolean;
+  diversSeePayments: boolean;
 }
 
 function Option({ icon, title, sub, on, onClick }: { icon: React.ReactNode; title: string; sub: string; on: boolean; onClick: (button: HTMLButtonElement) => void }) {
@@ -198,6 +199,7 @@ function Create() {
     pickYourName: true,
     allowNotOnList: true,
     diversCanShare: true,
+    diversSeePayments: false,
   });
   const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }));
 
@@ -258,6 +260,7 @@ function Create() {
         pickYourName: d.pickYourName,
         allowNotOnList: d.allowNotOnList,
         diversCanShare: d.diversCanShare,
+        diversSeePayments: d.diversSeePayments,
       }),
       wait(MAKING_MS),
     ]);
@@ -572,6 +575,13 @@ function Create() {
           <span>Adding people directly is always just you.</span>
         </div>
         <Toggle on={d.diversCanShare} onChange={(on) => set({ diversCanShare: on })} label="Divers can share the invite link" />
+      </div>
+      <div className={s.setting} style={{ marginTop: 10 }}>
+        <div>
+          <b>Divers can see who has paid</b>
+          <span>Off: each diver sees only their own payment and the totals. You and your approvers always see everything.</span>
+        </div>
+        <Toggle on={d.diversSeePayments} onChange={(on) => set({ diversSeePayments: on })} label="Divers can see who has paid" />
       </div>
       <ErrorText error={create.error} />
     </>,

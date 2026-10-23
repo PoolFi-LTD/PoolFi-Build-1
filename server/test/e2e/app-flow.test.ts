@@ -166,7 +166,7 @@ describe("a pool with approvers", () => {
     expect(inbox("dayo@example.com")).toEqual([`Receipt: ${(shareBase / 1e7).toFixed(2)} USDC paid into 300L Class Dues`]);
     const mail = h.emails.find((e) => e.to === "dayo@example.com");
     expect(mail?.text).toContain(`PF-R-${suffix}-0001`);
-    expect(mail?.text).toContain("Paid as: Dayo Okeke");
+    expect(mail?.text).toContain("Paid by: Dayo Okeke");
 
     const receipt = await app("GET", `/receipts/PF-R-${suffix}-0001`);
     expect(receipt.body).toMatchObject({ paidBy: "Dayo Okeke", poolName: "300L Class Dues", lifeguardName: "Judith Okafor", status: "confirmed", amount: shareBase / 1e7 });
@@ -292,5 +292,53 @@ describe("a pool with approvers", () => {
     const contacts = await app("GET", "/contacts", people.lifeguard);
     expect(contacts.body.map((c: { name: string }) => c.name)).toEqual(["Ada Eze", "Dayo Okeke", "Emeka Obi", "Tobi Bello", "Zainab Musa"]);
     expect(contacts.body[0]).toEqual({ userId: people.ada.id, name: "Ada Eze", detail: "From 300L Class Dues" });
+  });
+
+  it("keeps each diver's payment private unless the lifeguard lets divers see them", async () => {
+    const own = await app("GET", `/pools/${pool.id}`, people.dayo);
+    expect(own.body).toMatchObject({ diversSeePayments: false, paidCount: 2 });
+    expect(own.body.divers.map((d: { name: string }) => d.name)).toEqual(["Dayo Okeke"]);
+    expect(own.body.activity.filter((a: { kind: string }) => a.kind === "payment").map((a: { title: string }) => a.title)).toEqual([
+      "You paid into 300L Class Dues",
+    ]);
+    expect((await app("GET", `/invites/${pool.code}`)).body.names.every((n: { paid: boolean }) => !n.paid)).toBe(true);
+    // Approvers and the lifeguard always see everyone.
+    expect((await app("GET", `/pools/${pool.id}`, people.tobi)).body.divers).toHaveLength(2);
+
+    const refused = await h.app.inject({ method: "PATCH", url: `/v1/app/pools/${pool.id}/settings`, headers: people.dayo.headers, payload: { diversSeePayments: true } });
+    expect(refused.statusCode).toBe(403);
+    const opened = await h.app.inject({ method: "PATCH", url: `/v1/app/pools/${pool.id}/settings`, headers: people.lifeguard.headers, payload: { diversSeePayments: true } });
+    expect(opened.json()).toMatchObject({ diversSeePayments: true });
+    expect((await app("GET", `/pools/${pool.id}`, people.dayo)).body.divers).toHaveLength(2);
+    expect((await app("GET", `/invites/${pool.code}`)).body.names.every((n: { paid: boolean }) => n.paid)).toBe(true);
+  });
+
+  it("fills the notifications inbox and marks it read", async () => {
+    const inbox = await app("GET", "/notifications", people.lifeguard);
+    const titles = inbox.body.items.map((n: { title: string }) => n.title);
+    expect(titles).toContain("300L Class Dues is full! Request your payout when you're ready.");
+    expect(titles).toContain("Zainab Musa approved the payout for 300L Class Dues.");
+    expect(titles.some((t: string) => t.startsWith("Ada Eze declined the payout for 300L Class Dues"))).toBe(true);
+    expect(inbox.body.unread).toBeGreaterThan(0);
+    // Your own actions aren't news to you.
+    expect(titles.some((t: string) => t.includes("You "))).toBe(false);
+
+    await app("POST", "/notifications/read", people.lifeguard);
+    expect((await app("GET", "/notifications", people.lifeguard)).body.unread).toBe(0);
+
+    const diver = (await app("GET", "/notifications", people.dayo)).body.items.map((n: { title: string }) => n.title);
+    expect(diver.some((t: string) => t.includes("was paid out to Judith Okafor"))).toBe(true);
+  });
+
+  it("earns badges for what people did", async () => {
+    const earned = async (user: TestUser) =>
+      (await app("GET", "/me/achievements", user)).body.badges.filter((b: { earned: boolean }) => b.earned).map((b: { id: string }) => b.id);
+    expect(await earned(people.lifeguard)).toEqual(["first_pool", "full_pool"]);
+    expect(await earned(people.zainab)).toEqual(["trusted"]);
+    expect(await earned(people.dayo)).toEqual(["early", "stablecoins"]);
+    expect((await app("GET", "/me/achievements", people.dayo)).body).toMatchObject({ streak: 1, emailVerified: true, remindersOn: true });
+
+    const off = await h.app.inject({ method: "PUT", url: "/v1/app/me/preferences", headers: people.dayo.headers, payload: { remindersOn: false } });
+    expect(off.json()).toMatchObject({ remindersOn: false });
   });
 });

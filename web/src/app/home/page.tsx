@@ -6,6 +6,7 @@ import { Suspense, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { Celebration, CountUp, Sea } from "@/components/motion";
 import { ActivityRow, BalanceTile, PoolRow } from "@/components/pool";
+import { useSession } from "@/components/providers";
 import { AppShell } from "@/components/shells";
 import { ComingSoon, EmptyState, Loaded, Money } from "@/components/ui";
 import { AddFundsModal } from "@/components/wallet";
@@ -39,6 +40,7 @@ function Welcome({ user }: { user: User }) {
 }
 
 function Home({ user }: { user: User }) {
+  const { unread } = useSession();
   const now = useNow();
   const home = useResource(() => api.getHome(), []);
   const wallet = useResource(() => api.getWallet(), []);
@@ -56,8 +58,9 @@ function Home({ user }: { user: User }) {
         </div>
         <Link href="/notifications" className="icon-btn" aria-label="Notifications">
           {/* The bell rings while something needs you. */}
-          <span className={home.data?.alerts.length ? "bell-ring" : undefined} style={{ display: "grid" }}>
+          <span className={home.data?.alerts.length || unread ? "bell-ring" : undefined} style={{ display: "grid", position: "relative" }}>
             <Icon name="bell" />
+            {unread > 0 && <span className="dot-badge" aria-label={`${unread} new notifications`} />}
           </span>
         </Link>
         <Link href="/settings" className="icon-btn hide-m" aria-label="Settings">

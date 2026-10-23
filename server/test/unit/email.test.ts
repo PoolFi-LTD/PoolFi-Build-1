@@ -65,7 +65,9 @@ describe("messages", () => {
     );
     expect(r.subject).toBe("Receipt: 1.58 USDC paid into 300L Class Dues");
     expect(r.html).toContain('href="https://thepoolfi.com/receipts/PF-R-7K2Q-0001"');
-    expect(r.text).toContain("View receipt: https://thepoolfi.com/receipts/PF-R-7K2Q-0001");
+    expect(r.html).toContain('href="https://thepoolfi.com/r/PF-R-7K2Q-0001"');
+    expect(r.html).toContain("paid to 300L Class Dues");
+    expect(r.text).toContain("Check it at https://thepoolfi.com/r/PF-R-7K2Q-0001");
     expect(r.text).toContain("Date: 21 Oct 2026, 16:02");
     expect(usdc(2171.3)).toBe("2,171.30 USDC");
   });

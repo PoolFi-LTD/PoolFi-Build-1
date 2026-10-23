@@ -1,0 +1,40 @@
+/* The Me screen (prototype "Me"): profile, on-time streak, badges, then the account list. */
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: start; max-width: 1100px; }
+
+.head { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 4px 0 6px; }
+.pill { display: inline-flex; align-items: center; gap: 5px; height: 26px; margin-top: 8px; padding: 0 10px; border-radius: 999px; font-family: var(--font-display); font-weight: 600; font-size: 12.5px; }
+.pill svg { width: 13px; height: 13px; }
+.pillGood { background: var(--green-50); color: var(--green-ink); }
+.pillWait { background: #fef0c7; color: #93370d; }
+
+.streak { display: flex; align-items: center; gap: 14px; margin-top: 18px; padding: 16px 18px; border-radius: 20px; background: var(--blue); color: var(--white); position: relative; overflow: hidden; isolation: isolate; }
+.streak::after { content: ""; position: absolute; inset: auto -20% -60% -20%; height: 120%; background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.16), transparent 60%); z-index: -1; }
+.wave { font-size: 34px; animation: bob 2.4s ease-in-out infinite; }
+.streakNumber { font-family: var(--font-display); font-weight: 700; font-size: 40px; letter-spacing: -0.04em; line-height: 1; }
+.streakText { font-size: 13.5px; opacity: 0.9; margin-top: 4px; }
+
+.sectionHead { display: flex; justify-content: space-between; align-items: baseline; margin: 26px 0 12px; }
+
+.badges { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.badge { text-align: center; padding: 14px 6px; border-radius: 16px; background: var(--white); border: 1px solid var(--line); }
+.medal { width: 52px; height: 52px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; font-size: 26px; background: radial-gradient(circle at 35% 30%, #fffbf1, #f2dfb6 55%, #d6b97e); box-shadow: 0 3px 0 #c9a45c; }
+.locked .medal { background: var(--line-soft); box-shadow: 0 3px 0 #d2d8e3; filter: grayscale(1); opacity: 0.6; }
+.badge b { display: block; font-family: var(--font-display); font-weight: 600; font-size: 12.5px; margin-top: 8px; line-height: 1.2; }
+.badge span { display: block; font-size: 11px; color: var(--slate); margin-top: 2px; }
+.locked b { color: var(--slate); }
+
+.rows { border: 1px solid var(--line); border-radius: 18px; background: var(--white); overflow: hidden; }
+.row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: none; color: inherit; font: inherit; text-decoration: none; transition: background 150ms; }
+.row:last-child { border-bottom: 0; }
+button.row, a.row { cursor: pointer; }
+button.row:hover, a.row:hover { background: var(--bg); }
+.rowIcon { width: 36px; height: 36px; border-radius: 10px; background: var(--blue-50); color: var(--blue); display: grid; place-items: center; flex: none; }
+.rowIcon svg { width: 18px; height: 18px; }
+.rowIconDanger { background: #fee4e2; color: #b42318; }
+.rowLabel { flex: 1; font-weight: 500; font-size: 15px; min-width: 0; }
+.rowDetail { font-size: 13px; color: var(--slate); margin-right: 4px; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row > svg:last-child { width: 18px; height: 18px; color: var(--slate); flex: none; }
+
+@media (max-width: 899px) {
+  .layout { grid-template-columns: 1fr; gap: 8px; }
+}

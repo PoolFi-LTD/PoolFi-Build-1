@@ -11,6 +11,7 @@ import { ApiError } from "./errors";
 import { feeOf, fromNaira, grossShare, roundUsdc } from "./money";
 import { CODE_LENGTH } from "./signin";
 import type {
+  Achievements,
   ActivityItem,
   Approver,
   CreatePoolInput,
@@ -26,7 +27,10 @@ import type {
   User,
 } from "./types";
 
-const STORAGE_KEY = "poolfi-sample-v1";
+const STORAGE_KEY = "poolfi-sample-v2";
+/** The password of every seeded sample account. */
+export const SAMPLE_PASSWORD = "poolfi123";
+const MAX_TRIES = 5;
 const FEE_BPS = 500;
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -76,11 +80,20 @@ interface SamplePool {
   pickYourName: boolean;
   allowNotOnList: boolean;
   diversCanShare: boolean;
+  diversSeePayments?: boolean;
 }
 
 interface SampleState {
   session: string | null;
-  pending: { to: string; existing: boolean } | null;
+  /** Signed in with the password, waiting for the emailed code. */
+  pending: { userId: string } | null;
+  /** Passwords by user id; seeded accounts use SAMPLE_PASSWORD. */
+  passwords: Record<string, string>;
+  /** Wrong passwords in a row, by email; MAX_TRIES locks the account. */
+  failures: Record<string, number>;
+  resetFor: string | null;
+  notificationsSeenAt?: number;
+  remindersOff?: Record<string, boolean>;
   users: Record<string, SampleUser>;
   pools: SamplePool[];
   nextId: number;
@@ -246,7 +259,7 @@ function seed(): SampleState {
   ].sort((a, b) => b.at.localeCompare(a.at));
   users.judith.balance = roundUsdc(users.judith.transactions.reduce((s, t) => s + (t.direction === "in" ? t.amount : -t.amount), 0));
 
-  return { session: null, pending: null, users, pools, nextId: 1 };
+  return { session: null, pending: null, passwords: {}, failures: {}, resetFor: null, users, pools, nextId: 1 };
 }
 
 function tx(id: string, kind: Transaction["kind"], title: string, at: number, amount: number, direction: "in" | "out"): Transaction {
@@ -445,12 +458,20 @@ function detail(s: SampleState, p: SamplePool, userId: string): PoolDetail {
       reference: p.payout.reference,
       declinedBy: p.payout.declinedBy,
     },
-    // Phone numbers and emails are only for the lifeguard.
-    divers: base.role === "lifeguard" ? p.divers : p.divers.map((d) => ({ ...d, contact: null })),
+    // Phone numbers and emails are only for the lifeguard; unless allowed, a diver sees only their own payment.
+    divers:
+      base.role === "lifeguard"
+        ? p.divers
+        : p.divers
+            .filter((d) => p.diversSeePayments || base.role === "approver" || d.userId === userId)
+            .map((d) => ({ ...d, contact: null })),
     pickYourName: p.pickYourName,
     allowNotOnList: p.allowNotOnList,
     diversCanShare: p.diversCanShare,
-    activity: [...p.activity].sort((a, b) => b.at.localeCompare(a.at)),
+    diversSeePayments: Boolean(p.diversSeePayments),
+    activity: [...p.activity]
+      .filter((a) => a.kind !== "payment" || p.diversSeePayments || base.role !== "diver" || a.actorName === fullName(s.users[userId]))
+      .sort((a, b) => b.at.localeCompare(a.at)),
     yourRefund: base.status === "refunded" && mine?.paid ? mine.amount : null,
     yourReceiptRef: mine?.receiptRef ?? null,
     closedAt: p.payout?.paidAt ? new Date(p.payout.paidAt).toISOString() : base.status === "refunded" ? new Date(p.deadline).toISOString() : null,
@@ -492,6 +513,27 @@ function newCode(s: SampleState): string {
   }
 }
 
+/** The Me screen's streak and badges, from what the signed-in sample user has done. */
+function sampleAchievements(s: SampleState): Achievements {
+  const u = me(s);
+  const mine = s.pools.filter((p) => roleOf(p, u.id));
+  const paid = s.pools.filter((p) => p.divers.some((d) => d.userId === u.id && d.paid));
+  const early = paid.some((p) => p.divers.some((d) => d.userId === u.id && d.paidAt && new Date(d.paidAt).getTime() - p.createdAt < DAY));
+  return {
+    streak: paid.length,
+    emailVerified: true,
+    remindersOn: !s.remindersOff?.[u.id],
+    badges: [
+      { id: "early", icon: "⚡", name: "Early diver", detail: "Paid within a day", earned: early },
+      { id: "first_pool", icon: "🛟", name: "First pool", detail: "Started a pool", earned: s.pools.some((p) => p.lifeguardId === u.id) },
+      { id: "full_pool", icon: "🎉", name: "Full pool", detail: "A pool hit its goal", earned: s.pools.some((p) => p.lifeguardId === u.id && raisedOf(p) >= goalOf(p)) },
+      { id: "trusted", icon: "🔑", name: "Trusted", detail: "Approved a payout", earned: s.pools.some((p) => p.payout?.approvals.some((a) => a.userId === u.id && a.status === "approved")) },
+      { id: "stablecoins", icon: "🌍", name: "Diaspora diver", detail: "Paid in stablecoins", earned: paid.length > 0 },
+      { id: "ten_pools", icon: "💯", name: "10 pools", detail: "Be in 10 pools", earned: mine.length >= 10 },
+    ],
+  };
+}
+
 // The API
 
 export const sampleApi: PoolFiApi = {
@@ -501,31 +543,72 @@ export const sampleApi: PoolFiApi = {
       return s.session ? s.users[s.session] : null;
     }, 60),
 
-  sendCode: (email) =>
+  signUp: (email, password) =>
     respond(() => {
       const s = load();
       const value = email.trim().toLowerCase();
-      const existing = Object.values(s.users).some((u) => u.email === value);
-      s.pending = { to: value, existing };
-    }, 500),
+      if (Object.values(s.users).some((u) => u.email === value)) {
+        throw new ApiError("account_exists", "There's already an account with this email. Sign in instead.");
+      }
+      const id = `user${s.nextId++}`;
+      s.users[id] = { ...user(id, "", ""), email: value, phone: null };
+      s.passwords[id] = password;
+      s.pending = { userId: id };
+    }, 600),
 
-  verifyCode: (code, recipient) =>
+  signIn: (email, password) =>
+    respond(() => {
+      const s = load();
+      const value = email.trim().toLowerCase();
+      const locked = () => new ApiError("account_locked", "Your account is locked after too many wrong passwords. We emailed you a code to unlock it.");
+      if ((s.failures[value] ?? 0) >= MAX_TRIES) throw locked();
+      const found = Object.values(s.users).find((u) => u.email === value);
+      if (!found || (s.passwords[found.id] ?? SAMPLE_PASSWORD) !== password) {
+        const failures = (s.failures[value] = (s.failures[value] ?? 0) + 1);
+        if (failures >= MAX_TRIES) throw locked();
+        const left = MAX_TRIES - failures;
+        throw new ApiError("wrong_password", `Wrong email or password. ${left} ${left === 1 ? "try" : "tries"} left before we lock the account to keep it safe.`, { attemptsLeft: left });
+      }
+      s.pending = { userId: found.id };
+    }, 600),
+
+  verifyCode: (code) =>
     respond(() => {
       const s = load();
       if (!new RegExp(`^\\d{${CODE_LENGTH}}$`).test(code)) throw new ApiError("invalid_code", "That code isn't right. Check it and try again.");
       const pending = s.pending;
-      if (!pending) throw new ApiError("code_expired", "Ask for a new code.");
-      const email = recipient?.trim().toLowerCase() || pending.to;
-      const existing = Object.values(s.users).find((u) => u.email === email);
+      if (!pending) throw new ApiError("password_required", "Sign in with your email and password first.");
       s.pending = null;
-      if (existing) {
-        s.session = existing.id;
-        return { needsProfile: false };
-      }
-      const id = `user${s.nextId++}`;
-      s.users[id] = { ...user(id, "", ""), email, phone: null };
-      s.session = id;
-      return { needsProfile: true };
+      s.session = pending.userId;
+      const u = s.users[pending.userId];
+      s.failures[u.email ?? ""] = 0;
+      return { needsProfile: !u.firstName };
+    }, 600),
+
+  resendCode: () => respond(() => undefined, 400),
+
+  unlockAccount: (email, code) =>
+    respond(() => {
+      if (!new RegExp(`^\\d{${CODE_LENGTH}}$`).test(code)) throw new ApiError("invalid_code", "That code isn't right. Check it and try again.");
+      load().failures[email.trim().toLowerCase()] = 0;
+    }, 600),
+
+  resendUnlockCode: () => respond(() => undefined, 400),
+
+  requestPasswordReset: (email) =>
+    respond(() => {
+      load().resetFor = email.trim().toLowerCase();
+    }, 500),
+
+  setNewPassword: (password) =>
+    respond(() => {
+      const s = load();
+      const found = Object.values(s.users).find((u) => u.email === s.resetFor);
+      if (!found) throw new ApiError("reset_link_expired", "This reset link has expired or was already used. Ask for a new one.");
+      s.passwords[found.id] = password;
+      s.failures[found.email ?? ""] = 0;
+      s.resetFor = null;
+      s.session = null;
     }, 600),
 
   saveProfile: ({ firstName, lastName, avatar }) =>
@@ -593,6 +676,45 @@ export const sampleApi: PoolFiApi = {
         .sort((a, b) => b.at.localeCompare(a.at));
     }),
 
+  getAchievements: () => respond(() => sampleAchievements(load()), 200),
+
+  savePreferences: ({ remindersOn }) =>
+    respond(() => {
+      const s = load();
+      s.remindersOff = { ...s.remindersOff, [me(s).id]: !remindersOn };
+      return sampleAchievements(s);
+    }, 200),
+
+  getNotifications: () =>
+    respond(() => {
+      const s = load();
+      tick(s);
+      const u = me(s);
+      const seen = s.notificationsSeenAt ?? 0;
+      const items = visiblePools(s, u.id)
+        .flatMap((p) =>
+          p.activity
+            .filter((a) => a.actorName !== fullName(u) && a.kind !== "created")
+            .filter((a) => a.kind !== "payment" || p.diversSeePayments || roleOf(p, u.id) !== "diver")
+            .map((a) => ({
+              id: a.id,
+              icon: { payment: "🌊", goal_met: "🎉", approval: "🔑", payout: "💸", refund: "↩️", reminder: "📣", joined: "👋", created: "✨" }[a.kind],
+              title: a.title,
+              at: a.at,
+              href: `/pools/${p.id}`,
+            })),
+        )
+        .sort((a, b) => b.at.localeCompare(a.at))
+        .slice(0, 50)
+        .map((n) => ({ ...n, unread: new Date(n.at).getTime() > seen }));
+      return { items, unread: items.filter((n) => n.unread).length };
+    }),
+
+  markNotificationsRead: () =>
+    respond(() => {
+      load().notificationsSeenAt = Date.now();
+    }, 100),
+
   listContacts: () =>
     respond(() => {
       const s = load();
@@ -635,6 +757,7 @@ export const sampleApi: PoolFiApi = {
         pickYourName: input.pickYourName,
         allowNotOnList: input.allowNotOnList,
         diversCanShare: input.diversCanShare,
+        diversSeePayments: input.diversSeePayments,
       };
       s.pools.unshift(p);
       return detail(s, p, u.id);
@@ -665,6 +788,16 @@ export const sampleApi: PoolFiApi = {
       p.expectedCount = Math.max(p.expectedCount, p.divers.length);
       return detail(s, p, u.id);
     }, 700),
+
+  updatePoolSettings: (poolId, settings) =>
+    respond(() => {
+      const s = load();
+      const u = me(s);
+      const p = findPool(s, poolId);
+      if (p.lifeguardId !== u.id) throw new ApiError("not_pool_admin", "Only the lifeguard can change the pool's settings.");
+      p.diversSeePayments = settings.diversSeePayments;
+      return detail(s, p, u.id);
+    }),
 
   remindUnpaid: (poolId) =>
     respond(() => {

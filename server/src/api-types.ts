@@ -116,12 +116,50 @@ export interface PoolDetail extends PoolSummary {
   pickYourName: boolean;
   allowNotOnList: boolean;
   diversCanShare: boolean;
+  /** Divers see each other's payments. Off (the default): a diver's `divers` and `activity` hold only their own payment. */
+  diversSeePayments: boolean;
   activity: ActivityItem[];
   /** The signed-in diver's own refund, on refunded pools. */
   yourRefund: Usdc | null;
   yourReceiptRef: string | null;
   closedAt: string | null;
   totalRefunded: Usdc;
+}
+
+/** A badge on the Me screen, earned by doing something in PoolFi. */
+export interface Badge {
+  id: "early" | "first_pool" | "full_pool" | "trusted" | "stablecoins" | "ten_pools";
+  icon: string;
+  name: string;
+  detail: string;
+  earned: boolean;
+}
+
+/** The Me screen: on-time streak, badges and preferences. */
+export interface Achievements {
+  /** Payments in a row with none missed (a pool joined but not paid before it closed). */
+  streak: number;
+  badges: Badge[];
+  emailVerified: boolean;
+  /** Reminder emails from lifeguards for unpaid shares. */
+  remindersOn: boolean;
+}
+
+/** A line in the notifications inbox. */
+export interface AppNotification {
+  id: string;
+  icon: string;
+  title: string;
+  at: string;
+  /** Newer than the last time the inbox was marked read. */
+  unread: boolean;
+  /** Where tapping it goes. */
+  href: string | null;
+}
+
+export interface NotificationsView {
+  items: AppNotification[];
+  unread: number;
 }
 
 export interface HomeSummary {
@@ -232,6 +270,8 @@ export interface CreatePoolInput {
   pickYourName: boolean;
   allowNotOnList: boolean;
   diversCanShare: boolean;
+  /** Divers see each other's payments; off unless the lifeguard turns it on. */
+  diversSeePayments: boolean;
 }
 
 export interface PaymentResult {

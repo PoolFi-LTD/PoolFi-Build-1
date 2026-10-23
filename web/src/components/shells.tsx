@@ -27,11 +27,18 @@ const ACCOUNT: { href: string; label: string; icon: IconName }[] = [
 
 function NavLink({ href, label, icon }: { href: string; label: string; icon: IconName }) {
   const path = usePathname();
+  const { unread } = useSession();
+  const badge = href === "/notifications" && unread > 0 ? unread : 0;
   const active = path === href || (href !== "/home" && path.startsWith(`${href}/`));
   return (
     <Link href={href} className={`${s.nav} ${active ? s.navActive : ""}`} aria-current={active ? "page" : undefined}>
       <Icon name={icon} />
       {label}
+      {badge > 0 && (
+        <span className="count-badge" aria-label={`${badge} new`}>
+          {badge > 9 ? "9+" : badge}
+        </span>
+      )}
     </Link>
   );
 }
@@ -155,7 +162,11 @@ export function AppShell({ children }: { children: (user: User) => ReactNode }) 
 }
 
 function Main({ children }: { children: ReactNode }) {
-  const tabbed = TAB_PAGES.includes(usePathname());
+  const path = usePathname();
+  const tabbed = TAB_PAGES.includes(path);
+  // New notifications are counted again on every signed-in page.
+  const { refreshUnread } = useSession();
+  useEffect(() => refreshUnread(), [path, refreshUnread]);
   return (
     <main className={`${s.main} ${tabbed ? s.tabbed : ""}`}>
       <Screen>{children}</Screen>

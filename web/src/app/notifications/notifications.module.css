@@ -1,0 +1,15 @@
+/* The notifications inbox: one row per thing that happened, new ones tinted. */
+.list { display: grid; gap: 8px; max-width: 760px; }
+.row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 18px; background: var(--white); border: 1px solid var(--line); color: inherit; text-decoration: none; transition: background 200ms ease, border-color 200ms ease; }
+a.row:hover { border-color: var(--blue-200); }
+.unread { background: var(--blue-50); border-color: var(--blue-100); }
+.icon { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 19px; background: var(--white); box-shadow: 0 0 0 1px var(--line); }
+.text { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.title { font-size: 15px; line-height: 1.45; color: var(--ink); }
+.when { font-size: 13px; color: var(--slate); }
+.dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--blue); }
+
+@media (max-width: 899px) {
+  .row { padding: 12px 14px; border-radius: 16px; }
+  .title { font-size: 14.5px; }
+}

@@ -1,6 +1,18 @@
 import { Networks } from "@stellar/stellar-sdk";
 import { z } from "zod";
-import type { ActivityItem, Contact, HomeAlert, HomeSummary, Receipt, Transaction, User, Wallet } from "../../api-types.ts";
+import type {
+  Achievements,
+  ActivityItem,
+  AppNotification,
+  Contact,
+  HomeAlert,
+  HomeSummary,
+  NotificationsView,
+  Receipt,
+  Transaction,
+  User,
+  Wallet,
+} from "../../api-types.ts";
 import type { AuthUser } from "../../auth.ts";
 import type { Db } from "../../db.ts";
 import { ApiError } from "../../errors.ts";
@@ -36,6 +48,7 @@ export const ProfileInput = z.object({
 });
 
 export const DepositInput = z.object({ amount: UsdcInput });
+export const PreferencesInput = z.object({ remindersOn: z.boolean() });
 
 interface ReceiptRow {
   receipt_ref: string;
@@ -84,10 +97,13 @@ export class Account {
     const [built, balance, activity, approvals, locked] = await Promise.all([
       this.views.summaries(rows, user.id),
       address ? this.chain.usdcBalance(address) : Promise.resolve(0n),
-      this.views.activity(
-        rows.map((r) => r.id),
-        user.id,
-        4,
+      this.views.paymentsHiddenIn(rows, user.id).then((hidden) =>
+        this.views.activity(
+          rows.map((r) => r.id),
+          user.id,
+          4,
+          hidden,
+        ),
       ),
       // Approvers who haven't voted on a waiting payout yet.
       this.db.query<{ pool_id: string }>(
@@ -147,7 +163,197 @@ export class Account {
       rows.map((r) => r.id),
       user.id,
       100,
+      await this.views.paymentsHiddenIn(rows, user.id),
     );
+  }
+
+  /**
+   * The notifications inbox: what happened in the user's pools that they'd want to
+   * know (not their own actions), newest first, with what's new since they last looked.
+   */
+  async notifications(user: AuthUser): Promise<NotificationsView> {
+    const rows = await this.views.visible(user.id);
+    const ids = rows.map((r) => r.id);
+    const hidden = await this.views.paymentsHiddenIn(rows, user.id);
+    const [[me], paid, waiting, events] = await Promise.all([
+      this.db.query<{ seen: Date | null; created_at: Date }>(
+        "select notifications_seen_at as seen, created_at from users where id = $1",
+        [user.id],
+      ),
+      this.db.query<{ pool_id: string }>("select distinct pool_id from contributions where user_id = $1", [user.id]),
+      // Payouts waiting for this approver's vote.
+      this.db.query<{ id: string; pool_id: string; pool_name: string; requested_at: Date; first_name: string | null; last_name: string | null; gross: string | null }>(
+        `select r.id, r.pool_id, p.name as pool_name, r.requested_at, u.first_name, u.last_name, r.gross
+         from payout_requests r
+         join pool_approvers a on a.pool_id = r.pool_id and a.user_id = $1
+         join pools p on p.id = r.pool_id
+         join users u on u.id = p.admin_user_id
+         where r.paid_at is null and r.declined_at is null
+           and not exists (select 1 from payout_votes v where v.request_id = r.id and v.user_id = $1)`,
+        [user.id],
+      ),
+      ids.length === 0
+        ? Promise.resolve([])
+        : this.db.query<{
+            id: string;
+            pool_id: string;
+            kind: ActivityItem["kind"];
+            actor_name: string | null;
+            amount: string | null;
+            data: { count?: number; vote?: string; reason?: string };
+            at: Date;
+            pool_name: string;
+            admin_user_id: string;
+            deadline: Date;
+          }>(
+            `select a.id, a.pool_id, a.kind, a.actor_name, a.amount, a.data, a.at, p.name as pool_name, p.admin_user_id, p.deadline
+             from activity a join pools p on p.id = a.pool_id
+             where a.pool_id = any($1::uuid[]) and a.actor_user_id is distinct from $2
+               and a.kind in ('payment', 'goal_met', 'approval', 'payout', 'refund', 'reminder')
+               and not (a.kind = 'payment' and a.pool_id = any($3::uuid[]))
+             order by a.at desc limit 60`,
+            [ids, user.id, hidden],
+          ),
+    ]);
+    const paidInto = new Set(paid.map((p) => p.pool_id));
+    const seen = me?.seen?.getTime() ?? 0;
+    const items: Omit<AppNotification, "unread">[] = [];
+
+    for (const w of waiting) {
+      const who = nameOf({ first_name: w.first_name, last_name: w.last_name });
+      items.push({
+        id: `approval-${w.id}`,
+        icon: "🔑",
+        title: `${who} requested the payout from ${w.pool_name}. You're an approver.`,
+        at: w.requested_at.toISOString(),
+        href: `/pools/${w.pool_id}/approve`,
+      });
+    }
+    for (const e of events) {
+      const lifeguard = e.admin_user_id === user.id;
+      const amount = e.amount === null ? "" : ` ${toUsdc(e.amount).toFixed(2)} USDC`;
+      const pool = `/pools/${e.pool_id}`;
+      const at = e.at.toISOString();
+      switch (e.kind) {
+        case "payment":
+          items.push({ id: e.id, icon: "🌊", title: `${e.actor_name ?? "Someone"} paid${amount} into ${e.pool_name}.`, at, href: pool });
+          break;
+        case "goal_met":
+          items.push({
+            id: e.id,
+            icon: "🎉",
+            title: lifeguard ? `${e.pool_name} is full! Request your payout when you're ready.` : `${e.pool_name} reached its goal.`,
+            at,
+            href: lifeguard ? `${pool}/payout` : pool,
+          });
+          break;
+        case "approval":
+          if (!lifeguard) break;
+          items.push({
+            id: e.id,
+            icon: e.data.vote === "declined" ? "✋" : "✅",
+            title:
+              e.data.vote === "declined"
+                ? `${e.actor_name ?? "An approver"} declined the payout for ${e.pool_name}${e.data.reason ? `: "${e.data.reason}"` : "."}`
+                : `${e.actor_name ?? "An approver"} approved the payout for ${e.pool_name}.`,
+            at,
+            href: `${pool}/payout/status`,
+          });
+          break;
+        case "payout":
+          if (!lifeguard && !paidInto.has(e.pool_id)) break;
+          items.push({
+            id: e.id,
+            icon: "💸",
+            title: lifeguard ? `${amount.trim()} from ${e.pool_name} landed in your PoolFi balance.` : `${e.pool_name} was paid out to ${e.actor_name ?? "the lifeguard"}.`,
+            at,
+            href: lifeguard ? `${pool}/record` : pool,
+          });
+          break;
+        case "refund":
+          if (!lifeguard && !paidInto.has(e.pool_id)) break;
+          items.push({
+            id: e.id,
+            icon: "↩️",
+            title: lifeguard
+              ? `${e.pool_name} didn't reach its goal. Everyone who paid got their money back.`
+              : `${e.pool_name} didn't reach its goal. Your money is back in your PoolFi balance.`,
+            at,
+            href: lifeguard ? pool : "/wallet",
+          });
+          break;
+        case "reminder":
+          // Reminders matter to people in the pool who haven't paid yet.
+          if (lifeguard || paidInto.has(e.pool_id)) break;
+          items.push({ id: e.id, icon: "📣", title: `${e.actor_name ?? "The lifeguard"} reminded you: ${e.pool_name} closes soon.`, at, href: pool });
+          break;
+      }
+    }
+    if (items.length === 0 && me) {
+      items.push({ id: "welcome", icon: "👋", title: "Welcome to PoolFi! Create your first pool, or pay into one from an invite link.", at: me.created_at.toISOString(), href: "/create" });
+    }
+    const sorted = items.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 50).map((n) => ({ ...n, unread: new Date(n.at).getTime() > seen }));
+    return { items: sorted, unread: sorted.filter((n) => n.unread).length };
+  }
+
+  /** The on-time streak and badges on the Me screen, worked out from what the user has done. */
+  async achievements(user: AuthUser): Promise<Achievements> {
+    const [row] = await this.db.query<{
+      early: boolean;
+      first_pool: boolean;
+      full_pool: boolean;
+      trusted: boolean;
+      paid_any: boolean;
+      pools: number;
+      verified: boolean;
+      reminders_on: boolean | null;
+      streak: number;
+    }>(
+      `with misses as (
+         -- Pools the user joined but closed without their payment.
+         select max(p.deadline) as last from pool_members m join pools p on p.id = m.pool_id
+         where m.user_id = $1 and p.deadline < now()
+           and not exists (select 1 from contributions c where c.pool_id = p.id and c.user_id = $1)
+       )
+       select
+         exists (select 1 from contributions c join pools p on p.id = c.pool_id
+                 where c.user_id = $1 and c.created_at <= p.created_at + interval '1 day') as early,
+         exists (select 1 from pools where admin_user_id = $1) as first_pool,
+         exists (select 1 from activity a join pools p on p.id = a.pool_id where a.kind = 'goal_met' and p.admin_user_id = $1) as full_pool,
+         exists (select 1 from payout_votes where user_id = $1 and vote = 'approved') as trusted,
+         exists (select 1 from contributions where user_id = $1) as paid_any,
+         (select count(*)::int from pools p where p.admin_user_id = $1
+            or exists (select 1 from pool_approvers a where a.pool_id = p.id and a.user_id = $1)
+            or exists (select 1 from contributions c where c.pool_id = p.id and c.user_id = $1)) as pools,
+         (select email_verified_at is not null from users where id = $1) as verified,
+         (select reminders_on from users where id = $1) as reminders_on,
+         (select count(distinct c.pool_id)::int from contributions c, misses
+          where c.user_id = $1 and (misses.last is null or c.created_at > misses.last)) as streak`,
+      [user.id],
+    );
+    const has = (key: keyof NonNullable<typeof row>) => Boolean(row?.[key]);
+    return {
+      streak: row?.streak ?? 0,
+      emailVerified: has("verified"),
+      remindersOn: row?.reminders_on ?? true,
+      badges: [
+        { id: "early", icon: "⚡", name: "Early diver", detail: "Paid within a day", earned: has("early") },
+        { id: "first_pool", icon: "🛟", name: "First pool", detail: "Started a pool", earned: has("first_pool") },
+        { id: "full_pool", icon: "🎉", name: "Full pool", detail: "A pool hit its goal", earned: has("full_pool") },
+        { id: "trusted", icon: "🔑", name: "Trusted", detail: "Approved a payout", earned: has("trusted") },
+        { id: "stablecoins", icon: "🌍", name: "Diaspora diver", detail: "Paid in stablecoins", earned: has("paid_any") },
+        { id: "ten_pools", icon: "💯", name: "10 pools", detail: "Be in 10 pools", earned: (row?.pools ?? 0) >= 10 },
+      ],
+    };
+  }
+
+  async savePreferences(user: AuthUser, input: z.infer<typeof PreferencesInput>): Promise<Achievements> {
+    await this.db.query("update users set reminders_on = $2 where id = $1", [user.id, input.remindersOn]);
+    return this.achievements(user);
+  }
+
+  async markNotificationsRead(user: AuthUser): Promise<void> {
+    await this.db.query("update users set notifications_seen_at = now() where id = $1", [user.id]);
   }
 
   /** People the user shares a pool with, for picking approvers. Only people who can approve (an active wallet). */

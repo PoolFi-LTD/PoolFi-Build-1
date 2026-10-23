@@ -6,13 +6,13 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { Celebration, dropCoin } from "@/components/motion";
 import { ActivityRow, DiverRow, WaterTank } from "@/components/pool";
-import { useSession } from "@/components/providers";
+import { useSession, useToast } from "@/components/providers";
 import { RemindModal, ShareModal } from "@/components/share";
 import { AppShell, PageHead } from "@/components/shells";
-import { ComingSoon, EmptyState, Loaded, Money, Segmented, StatusPill } from "@/components/ui";
+import { ComingSoon, EmptyState, ErrorText, Loaded, Money, Segmented, StatusPill, Toggle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { countdown, dayDate, fullDateTime, percent } from "@/lib/format";
-import { useNow, useResource } from "@/lib/hooks";
+import { useAction, useNow, useResource } from "@/lib/hooks";
 import { formatAmount, formatUsdc } from "@/lib/money";
 import type { Diver, PoolDetail } from "@/lib/types";
 import s from "./pool.module.css";
@@ -232,6 +232,37 @@ function Details({ pool }: { pool: PoolDetail }) {
   );
 }
 
+/** The lifeguard's switch: whether divers can see each other's payments. */
+function PaymentsPrivacy({ pool, reload }: { pool: PoolDetail; reload: () => void }) {
+  const toast = useToast();
+  const save = useAction((on: boolean) => api.updatePoolSettings(pool.id, { diversSeePayments: on }));
+  return (
+    <div className="kv" style={{ padding: 16, display: "grid", gap: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ flex: 1 }}>
+          <div className="t-h3">Divers can see who has paid</div>
+          <div className="muted t-small">
+            {pool.diversSeePayments
+              ? "Everyone in the pool sees each payment."
+              : "Each diver sees only their own payment and the totals. You and your approvers see everything."}
+          </div>
+        </div>
+        <Toggle
+          on={pool.diversSeePayments}
+          onChange={async (on) => {
+            if ((await save.run(on)).ok) {
+              reload();
+              toast(on ? "Divers can now see who has paid" : "Payments are private to each diver", on ? "👀" : "🔒");
+            }
+          }}
+          label="Divers can see who has paid"
+        />
+      </div>
+      <ErrorText error={save.error} />
+    </div>
+  );
+}
+
 /** What the lifeguard sees: who has paid and the tools to chase the rest. */
 function LifeguardView({ pool, now, reload, onShare }: { pool: PoolDetail; now: number; reload: () => void; onShare: () => void }) {
   const router = useRouter();
@@ -305,7 +336,12 @@ function LifeguardView({ pool, now, reload, onShare }: { pool: PoolDetail; now: 
             ) : (
               <EmptyState title="Nothing yet">Payments and reminders show up here.</EmptyState>
             ))}
-          {tab === "details" && <Details pool={pool} />}
+          {tab === "details" && (
+            <div style={{ display: "grid", gap: 14 }}>
+              <PaymentsPrivacy pool={pool} reload={reload} />
+              <Details pool={pool} />
+            </div>
+          )}
         </div>
       </div>
 
@@ -390,12 +426,22 @@ function DiverView({ pool, now, onShare }: { pool: PoolDetail; now: number; onSh
       </div>
       <div className={s.right}>
         <h2 className="t-h2" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          Who has paid{" "}
+          {pool.diversSeePayments ? "Who has paid" : "Payments"}{" "}
           <span className="t-small muted">
-            {pool.paidCount} of {pool.expectedCount}
+            {pool.paidCount} of {pool.expectedCount} paid
           </span>
         </h2>
-        <Divers pool={pool} now={now} showContacts={false} fresh={motion.fresh} />
+        {pool.diversSeePayments ? (
+          <Divers pool={pool} now={now} showContacts={false} fresh={motion.fresh} />
+        ) : (
+          <>
+            <p className="note">
+              <Icon name="lock" />
+              {pool.lifeguard.name.split(" ")[0]} keeps payments private: you see your own and the totals.
+            </p>
+            {pool.divers.length > 0 && <Divers pool={pool} now={now} showContacts={false} fresh={motion.fresh} />}
+          </>
+        )}
       </div>
     </div>
   );

@@ -20,6 +20,8 @@ if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 export interface TestUser {
   id: string;
+  email: string;
+  sessionId: string;
   headers: Record<string, string>;
 }
 
@@ -55,16 +57,34 @@ export async function startHarness() {
   const mailer: Mailer = { send: async (batch) => void emails.push(...batch) };
   const { app, services } = await buildApp({ config, db, chain, mailer });
 
-  /** A signed-in user, as the auth provider would issue them. */
-  async function signIn(name: string): Promise<TestUser> {
-    const id = randomUUID();
-    const token = await new SignJWT({ email: `${name}@example.com`, aud: audience })
+  /**
+   * A signed-in user, as Supabase issues them: a session signed in with a password
+   * (or `method`). By default the emailed code is already confirmed, as it is for
+   * everyone using the app; `confirmed: false` stops before that step.
+   */
+  async function signIn(
+    name: string,
+    options: { confirmed?: boolean; method?: string; id?: string } = {},
+  ): Promise<TestUser> {
+    const id = options.id ?? randomUUID();
+    const sessionId = randomUUID();
+    const email = `${name}@example.com`;
+    const token = await new SignJWT({
+      email,
+      aud: audience,
+      session_id: sessionId,
+      amr: [{ method: options.method ?? "password", timestamp: Math.floor(Date.now() / 1000) }],
+    })
       .setProtectedHeader({ alg: "HS256" })
       .setSubject(id)
       .setIssuedAt()
       .setExpirationTime("1h")
       .sign(new TextEncoder().encode(jwtSecret));
-    return { id, headers: { authorization: `Bearer ${token}` } };
+    if (options.confirmed !== false) {
+      await db.query("insert into users (id, email, email_verified_at) values ($1, $2, now()) on conflict do nothing", [id, email]);
+      await db.query("insert into verified_sessions (session_id, user_id) values ($1, $2)", [sessionId, id]);
+    }
+    return { id, email, sessionId, headers: { authorization: `Bearer ${token}` } };
   }
 
   async function call(method: "GET" | "POST", url: string, user?: TestUser, body?: unknown) {

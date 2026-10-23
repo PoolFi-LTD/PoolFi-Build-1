@@ -2,6 +2,7 @@ import cors from "@fastify/cors";
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import { appRoutes } from "./app-routes.ts";
+import { authRoutes } from "./auth-routes.ts";
 import { createAuthenticator, type AuthUser } from "./auth.ts";
 import type { Config } from "./config.ts";
 import type { Db } from "./db.ts";
@@ -38,7 +39,14 @@ export async function buildApp({ config, db, chain, mailer }: AppDeps): Promise<
   const services = createServices({ config, db, chain, mailer }, app.log);
   const { wallets, deposits, pools } = services;
 
-  const signedIn = (request: FastifyRequest): Promise<AuthUser> => authenticate(request.headers.authorization);
+  /** A sign-in that finished both steps: the password, then the emailed code. */
+  const signedIn = async (request: FastifyRequest): Promise<AuthUser> => {
+    const user = await authenticate(request.headers.authorization);
+    await services.twoStep.requireVerified(user);
+    return user;
+  };
+  /** Any valid sign-in token, before the emailed code (for the sign-in steps themselves). */
+  const tokenOnly = (request: FastifyRequest): Promise<AuthUser> => authenticate(request.headers.authorization);
   const maybeSignedIn = (request: FastifyRequest): Promise<AuthUser | null> =>
     request.headers.authorization ? signedIn(request) : Promise.resolve(null);
 
@@ -117,6 +125,7 @@ export async function buildApp({ config, db, chain, mailer }: AppDeps): Promise<
   });
 
   await app.register(appRoutes(services.app, signedIn, config), { prefix: "/v1/app" });
+  await app.register(authRoutes(services.twoStep, tokenOnly, config), { prefix: "/v1/auth" });
 
   return { app, services };
 }

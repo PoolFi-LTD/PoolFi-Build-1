@@ -14,8 +14,12 @@ function supabase(): SupabaseClient {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!url || !key) throw new ApiError("not_configured", "Sign-in isn't set up yet.");
-    // Supabase marks a reset link with #…type=recovery and clears the address once it has read it.
-    const fromResetLink = typeof window !== "undefined" && /[#&]type=recovery(&|$)/.test(window.location.hash);
+    // Supabase marks a reset link with #…type=recovery and clears the address once it has read it,
+    // so note it now, before the client starts reading it.
+    const link = typeof window !== "undefined" ? new URLSearchParams(window.location.hash.slice(1)) : null;
+    const fromResetLink = link?.get("type") === "recovery";
+    const linkToken = fromResetLink ? link?.get("access_token") : null;
+    resetLinkSession = linkToken ? (tokenClaims(linkToken).session_id ?? null) : null;
     supabaseClient = createClient(url, key, {
       // The emailed code is the main way in; a sign-in link (if Supabase's email has one) works too.
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
@@ -41,6 +45,8 @@ function rememberRecovery(token: string | null) {
 }
 
 let recoverySession: string | null = null;
+/** The session named in the reset link this page was opened from, if it was. */
+let resetLinkSession: string | null = null;
 
 function rememberedRecovery(): string | null {
   if (recoverySession) return recoverySession;
@@ -203,7 +209,10 @@ export const httpApi: PoolFiApi = {
   async recoveryReady() {
     // Supabase sends people back with #error_code=… when a link has expired or was used.
     if (typeof window !== "undefined" && /(^|[#&])error(_code)?=/.test(window.location.hash)) return false;
-    const token = await accessToken(); // also lets Supabase read the link
+    // Waits until Supabase has read the link and saved the session it opened. It only announces
+    // "password recovery" a moment later, so the link noted above decides it here.
+    const token = await accessToken();
+    if (token && resetLinkSession && tokenClaims(token).session_id === resetLinkSession) rememberRecovery(token);
     const remembered = rememberedRecovery();
     return Boolean(token && remembered && tokenClaims(token).session_id === remembered);
   },

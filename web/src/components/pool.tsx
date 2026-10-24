@@ -147,7 +147,9 @@ const BUBBLES: [number, number, number, number][] = [
 ];
 
 /** Where the water sits for a percentage: it starts at a base so the numbers always sit in the water. */
-const levelOf = (pct: number, drained: boolean) => (drained && pct <= 0 ? 0 : 50 + Math.min(100, pct) * 0.45);
+/** The water's height in the tank: exactly the share of the goal raised. */
+const levelOf = (pct: number) => Math.max(0, Math.min(100, pct));
+
 
 /**
  * The pool as a tank of water. It fills from `from` to `pct` when it appears
@@ -163,13 +165,11 @@ export function WaterTank({ pct, from, line, sub, height = 248, refunded, drain,
   }, [pct, drain]);
   const shown = useCountUp(level, { duration: drain ? 1600 : 1100, from: start });
   const empty = shown < 0.5;
-  // Once the water drains away, the numbers are no longer on blue.
-  const dark = empty || (drain && level <= 0);
   const met = !refunded && Math.round(shown) >= 100;
   const classes = ["wt", met && "met", empty && "empty", drain && "drain", refunded && "refunded"].filter(Boolean).join(" ");
   return (
     <div ref={ref} className={classes} style={{ height }} role="img" aria-label={`${pct}% of the goal`}>
-      <div className="wt-water" style={{ height: `${levelOf(level, Boolean(drain))}%` }}>
+      <div className="wt-water" style={{ height: `${levelOf(level)}%` }}>
         <div className="wt-waves" aria-hidden="true">
           <svg className="w2" viewBox="0 0 400 16" preserveAspectRatio="none">
             <path d="M0 8 Q50 0 100 8 T200 8 T300 8 T400 8 V16 H0Z" />
@@ -186,10 +186,19 @@ export function WaterTank({ pct, from, line, sub, height = 248, refunded, drain,
           ))}
         </div>
       </div>
-      <div className="wt-text" style={{ color: dark ? "var(--navy)" : undefined, transition: "color 300ms" }}>
+      {/* The numbers twice: blue on the white tank, and a white copy shown only where the
+          water covers them, cut at the waterline and rising and falling with it. */}
+      <div className="wt-text">
         <div className="wt-pct">{Math.round(shown)}%</div>
         <div className="wt-line">{line}</div>
         <div className="wt-sub">{sub}</div>
+      </div>
+      <div className="wt-wet" style={{ clipPath: `inset(${100 - levelOf(level)}% 0 0 0)` }} aria-hidden="true">
+        <div className="wt-text">
+          <div className="wt-pct">{Math.round(shown)}%</div>
+          <div className="wt-line">{line}</div>
+          <div className="wt-sub">{sub}</div>
+        </div>
       </div>
       <span className="pill pill-green wt-gm">
         <Icon name="check" size={14} />

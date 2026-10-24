@@ -165,7 +165,11 @@
 .wt-ride.r1 { left: 62%; }
 .wt-ride.r2 { left: 84%; width: 36px; animation-delay: -1.3s; }
 .wt.empty .wt-ride { opacity: 0; }
-.wt-text { position: absolute; left: 22px; bottom: 20px; z-index: 3; color: var(--white); }
+.wt-text { position: absolute; left: 22px; bottom: 20px; z-index: 3; color: var(--navy); }
+/* The white copy of the numbers, showing only below the waterline; it moves with the water. */
+.wt-wet { position: absolute; inset: 0; z-index: 3; pointer-events: none; transition: clip-path 1100ms var(--ease-out); }
+.wt-wet .wt-text { color: var(--white); }
+.wt.drain .wt-wet { transition: clip-path 1600ms var(--ease-out); }
 .wt-pct { font-family: var(--font-display); font-weight: 700; font-size: 56px; line-height: 1; letter-spacing: -2px; font-variant-numeric: tabular-nums; }
 .wt-line { font-family: var(--font-display); font-weight: 700; font-size: 16px; margin-top: 6px; }
 .wt-sub { font-size: 13px; opacity: 0.9; }

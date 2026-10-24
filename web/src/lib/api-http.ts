@@ -14,12 +14,41 @@ function supabase(): SupabaseClient {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!url || !key) throw new ApiError("not_configured", "Sign-in isn't set up yet.");
+    // Supabase marks a reset link with #…type=recovery and clears the address once it has read it.
+    const fromResetLink = typeof window !== "undefined" && /[#&]type=recovery(&|$)/.test(window.location.hash);
     supabaseClient = createClient(url, key, {
       // The emailed code is the main way in; a sign-in link (if Supabase's email has one) works too.
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
     });
+    // Remember which session the reset link opened: only that one may set a new password.
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+      if (session && (event === "PASSWORD_RECOVERY" || (fromResetLink && event === "SIGNED_IN"))) rememberRecovery(session.access_token);
+    });
   }
   return supabaseClient;
+}
+
+const RECOVERY_KEY = "poolfi-recovery-session";
+
+function rememberRecovery(token: string | null) {
+  try {
+    if (token) sessionStorage.setItem(RECOVERY_KEY, tokenClaims(token).session_id ?? "");
+    else sessionStorage.removeItem(RECOVERY_KEY);
+  } catch {
+    // Storage can be off; the reset then has to finish in this page load.
+  }
+  recoverySession = token ? (tokenClaims(token).session_id ?? null) : null;
+}
+
+let recoverySession: string | null = null;
+
+function rememberedRecovery(): string | null {
+  if (recoverySession) return recoverySession;
+  try {
+    return sessionStorage.getItem(RECOVERY_KEY);
+  } catch {
+    return null;
+  }
 }
 
 /** Supabase's sign-in errors, in words the screens can show. */
@@ -83,14 +112,13 @@ const get = <T>(path: string) => request<T>("GET", path);
 const auth = <T = unknown>(path: string, body?: unknown, signedIn = true) =>
   request<T>("POST", `/api/v1/auth${path}`, body, signedIn);
 
-/** How a session was signed in ("password", "recovery"…), from its token. */
-function signInMethods(token: string): string[] {
+/** The claims in a Supabase session token (it's checked properly on the server). */
+function tokenClaims(token: string): { session_id?: string } {
   try {
     const part = token.split(".")[1] ?? "";
-    const payload = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/"))) as { amr?: { method?: string }[] };
-    return (payload.amr ?? []).map((m) => String(m.method));
+    return JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/"))) as { session_id?: string };
   } catch {
-    return [];
+    return {};
   }
 }
 
@@ -175,8 +203,9 @@ export const httpApi: PoolFiApi = {
   async recoveryReady() {
     // Supabase sends people back with #error_code=… when a link has expired or was used.
     if (typeof window !== "undefined" && /(^|[#&])error(_code)?=/.test(window.location.hash)) return false;
-    const token = await accessToken();
-    return token ? signInMethods(token).includes("recovery") : false;
+    const token = await accessToken(); // also lets Supabase read the link
+    const remembered = rememberedRecovery();
+    return Boolean(token && remembered && tokenClaims(token).session_id === remembered);
   },
 
   async setNewPassword(password) {
@@ -187,6 +216,7 @@ export const httpApi: PoolFiApi = {
     const { error } = await supabase().auth.updateUser({ password });
     if (error) throw authError(error);
     await auth("/password-reset/done");
+    rememberRecovery(null);
     // Everyone signs in again with the new password (and a new code).
     await supabase().auth.signOut({ scope: "global" });
   },

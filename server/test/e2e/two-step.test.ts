@@ -90,7 +90,8 @@ describe("two-step sign-in", () => {
     for (let i = 0; i < 5; i++) await post("/v1/auth/failed", undefined, { email: device.email });
 
     expect((await post("/v1/auth/password-reset/done", device)).body.error.code).toBe("recovery_required");
-    const recovery = await h.signIn("two-e", { confirmed: false, method: "recovery", id: device.id });
+    // Supabase marks the session a reset link opens as "otp".
+    const recovery = await h.signIn("two-e", { confirmed: false, method: "otp", id: device.id });
     expect((await post("/v1/auth/password-reset/done", recovery)).body).toEqual({ done: true });
 
     expect((await post("/v1/auth/status", undefined, { email: device.email })).body).toEqual({ locked: false, attemptsLeft: 5 });

@@ -16,6 +16,8 @@ const FAILURE_WINDOW = "24 hours";
 /** The least time between two codes, and the most codes in an hour, per session or account. */
 const RESEND_GAP_SECONDS = 30;
 const MAX_CODES_PER_HOUR = 6;
+/** Sign-in methods that prove the person has the inbox: an emailed reset link or code. */
+const EMAIL_PROVEN = new Set(["recovery", "otp", "magiclink"]);
 /** Confirmed sessions remembered in memory, so most requests skip the database. */
 const CACHE_LIMIT = 10_000;
 
@@ -161,10 +163,12 @@ export class TwoStep {
 
   /**
    * After a password reset (the emailed recovery link): the account unlocks, and every
-   * device must confirm a new code before it can use the app again.
+   * device must confirm a new code before it can use the app again. Supabase marks the
+   * session a reset link opens as "otp" (or "recovery"): it proves the inbox, which is
+   * what a reset rests on anyway. A session signed in with the password alone can't.
    */
   async passwordWasReset(user: AuthUser): Promise<void> {
-    if (!user.methods.includes("recovery") || !user.email) {
+    if (!user.methods.some((m) => EMAIL_PROVEN.has(m)) || !user.email) {
       throw new ApiError(403, "recovery_required", "Open the reset link we emailed you first.");
     }
     await this.db.query("delete from sign_in_failures where email = $1", [normalize(user.email)]);

@@ -97,4 +97,24 @@ describe("two-step sign-in", () => {
     expect((await post("/v1/auth/status", undefined, { email: device.email })).body).toEqual({ locked: false, attemptsLeft: 5 });
     expect((await contacts(device)).body.error.code).toBe("verification_required");
   });
+
+  it("closes a session after 10 minutes without activity", async () => {
+    const user = await h.signIn("two-f");
+    const active = async (u: TestUser) => (await h.app.inject({ method: "POST", url: "/v1/auth/active", headers: u.headers })).statusCode;
+    const idle = (minutes: number) =>
+      h.db.query("update verified_sessions set last_seen_at = now() - make_interval(mins => $2) where session_id = $1", [user.sessionId, minutes]);
+
+    // Any request counts as activity; the app also pings while you tap and type.
+    expect(await active(user)).toBe(204);
+    await idle(9);
+    expect((await contacts(user)).status).toBe(200);
+
+    await idle(11);
+    const expired = await contacts(user);
+    expect(expired.status).toBe(401);
+    expect(expired.body.error.code).toBe("session_expired");
+    // Closed for good: only the password and a new code open the app again.
+    expect((await contacts(user)).body.error.code).toBe("verification_required");
+    expect(await active(user)).toBe(403);
+  });
 });

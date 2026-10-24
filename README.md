@@ -220,6 +220,8 @@ Signing in takes a password and then a code. Supabase checks the password in the
 
 Sessions Supabase opens without the password (an emailed link or code) can never be confirmed, so the password and the inbox are both needed.
 
+A session with no activity for 10 minutes ends: the server closes it (`401 session_expired`) and the app sends the person to sign in again (password and a new code), then back to the page they were on. Taps, typing and scrolling count as activity, shared by every tab; while someone is active the app tells the server (`POST /v1/auth/active`) every couple of minutes. Change the limit with `SESSION_IDLE_MINUTES` on the server and `NEXT_PUBLIC_SESSION_IDLE_MINUTES` in the web app (keep them equal).
+
 ### Emails
 
 With `RESEND_API_KEY` set, the server emails people (through Resend) when something happens in their pools. Everyone signs in with their email, so everyone can get them; reminders go to people on a pool's list whose contact is an email address. A failed email is logged and never stops a payment or payout.

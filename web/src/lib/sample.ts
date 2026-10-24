@@ -678,6 +678,8 @@ export const sampleApi: PoolFiApi = {
         .sort((a, b) => b.at.localeCompare(a.at));
     }),
 
+  keepAlive: () => respond(() => undefined, 50),
+
   getAchievements: () => respond(() => sampleAchievements(load()), 200),
 
   savePreferences: ({ remindersOn }) =>

@@ -88,6 +88,8 @@ const EnvSchema = z
     RESEND_API_KEY: z.string().startsWith("re_", "must be a Resend API key (re_...)").optional(),
     EMAIL_FROM: z.string().min(3).optional(),
     EMAIL_REPLY_TO: z.email().optional(),
+    // A signed-in session with no activity for this long must sign in again (password and code).
+    SESSION_IDLE_MINUTES: z.coerce.number().int().min(1).max(24 * 60).default(10),
     // Device notifications (Web Push). Generate once with `npx web-push generate-vapid-keys`;
     // never change them afterwards, or every device must turn notifications on again.
     VAPID_PUBLIC_KEY: z.preprocess(unquote, z.string().min(40).optional()),
@@ -181,6 +183,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
             dailyMax: parseUsdc(e.DEPOSIT_DAILY_MAX_USDC),
           }
         : null,
+    sessionIdleMinutes: e.SESSION_IDLE_MINUTES,
     push:
       e.VAPID_PUBLIC_KEY && e.VAPID_PRIVATE_KEY
         ? { publicKey: e.VAPID_PUBLIC_KEY, privateKey: e.VAPID_PRIVATE_KEY, subject: e.VAPID_SUBJECT ?? "mailto:hello@thepoolfi.com" }

@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "@/lib/api";
+import { forgetActivity, idleTooLong, isPublicPath, lastActive, markActive, PING_EVERY_MS, SESSION_EXPIRED_EVENT } from "@/lib/idle";
 import { registerServiceWorker, syncPush } from "@/lib/push";
 import type { User } from "@/lib/types";
 import { sound } from "@/lib/sound";
@@ -19,6 +20,8 @@ interface Session {
   refreshUnread: () => void;
   refresh: () => Promise<User | null>;
   signOut: () => Promise<void>;
+  /** Signed out for being idle too long: pages send people to sign in, then back. */
+  idleOut: boolean;
 }
 
 const SessionContext = createContext<Session | null>(null);
@@ -29,9 +32,19 @@ export function Providers({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [unread, setUnread] = useState(0);
   const [toast, setToast] = useState<{ message: string; icon: string; id: number; leaving?: boolean } | null>(null);
+  const [idleOut, setIdleOut] = useState(false);
+
+  /** Too long without activity: sign out on this device; signed-in pages then send people to sign in. */
+  const endIdleSession = useCallback(async () => {
+    await api.signOut().catch(() => {});
+    forgetActivity();
+    if (!isPublicPath(window.location.pathname)) setIdleOut(true);
+    setUser(null);
+  }, []);
 
   const refresh = useCallback(async () => {
     const u = await api.getSession().catch(() => null);
+    if (u) setIdleOut(false);
     setUser(u);
     setLoading(false);
     return u;
@@ -39,21 +52,26 @@ export function Providers({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let alive = true;
-    api
-      .getSession()
-      .catch(() => null)
-      .then((u) => {
-        if (!alive) return;
-        setUser(u);
-        setLoading(false);
-      });
+    (async () => {
+      // Opened again after too long without activity (a tab or the installed app): signed out first.
+      if (idleTooLong()) {
+        await endIdleSession();
+        if (alive) setLoading(false);
+        return;
+      }
+      const u = await api.getSession().catch(() => null);
+      if (!alive) return;
+      setUser(u);
+      setLoading(false);
+    })();
     return () => {
       alive = false;
     };
-  }, []);
+  }, [endIdleSession]);
 
   const signOut = useCallback(async () => {
     await api.signOut();
+    forgetActivity();
     setUser(null);
     playSplash();
   }, []);
@@ -103,6 +121,40 @@ export function Providers({ children }: { children: ReactNode }) {
   }, []);
 
   const signedIn = Boolean(user);
+
+  // While signed in: taps, typing and scrolling count as activity (shared by every tab), the
+  // server hears about it every couple of minutes, and coming back after too long signs out.
+  useEffect(() => {
+    if (!signedIn) return;
+    markActive(true);
+    let lastPing = Date.now();
+    const onActivity = () => markActive();
+    const check = () => {
+      if (idleTooLong()) return void endIdleSession();
+      const last = lastActive() ?? 0;
+      if (document.visibilityState === "visible" && last > lastPing && Date.now() - lastPing > PING_EVERY_MS) {
+        lastPing = Date.now();
+        api.keepAlive().catch(() => {});
+      }
+    };
+    const onVisible = () => document.visibilityState === "visible" && check();
+    const onExpired = () => void endIdleSession();
+    const activity = ["pointerdown", "keydown", "wheel", "touchstart", "scroll"] as const;
+    activity.forEach((e) => window.addEventListener(e, onActivity, { passive: true, capture: true }));
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", check);
+    window.addEventListener("pageshow", check);
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    const timer = setInterval(check, 15_000);
+    return () => {
+      activity.forEach((e) => window.removeEventListener(e, onActivity, { capture: true }));
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", check);
+      window.removeEventListener("pageshow", check);
+      window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+      clearInterval(timer);
+    };
+  }, [signedIn, endIdleSession]);
   // The service worker shows device notifications; a device with them on follows whoever signs in.
   useEffect(() => {
     void registerServiceWorker();
@@ -119,7 +171,7 @@ export function Providers({ children }: { children: ReactNode }) {
   }, [signedIn]);
 
   return (
-    <SessionContext.Provider value={{ user, loading, refresh, signOut, unread: user ? unread : 0, setUnread, refreshUnread }}>
+    <SessionContext.Provider value={{ user, loading, refresh, signOut, unread: user ? unread : 0, setUnread, refreshUnread, idleOut }}>
       <ToastContext.Provider value={showToast}>
         {children}
         <Splash />
@@ -146,12 +198,15 @@ export function useToast() {
 
 /** Shows `children` only to signed-in users; everyone else goes to the welcome screen. */
 export function RequireSession({ children }: { children: (user: User) => ReactNode }) {
-  const { user, loading } = useSession();
+  const { user, loading, idleOut } = useSession();
   const router = useRouter();
   const path = usePathname();
   useEffect(() => {
-    if (!loading && !user) router.replace(`/?next=${encodeURIComponent(path)}`);
-  }, [loading, user, router, path]);
+    if (loading || user) return;
+    // Signed out for being idle: straight to sign in, then back here.
+    if (idleOut) router.replace(`/signup?${new URLSearchParams({ mode: "login", idle: "1", next: path + window.location.search })}`);
+    else router.replace(`/?next=${encodeURIComponent(path)}`);
+  }, [loading, user, router, path, idleOut]);
   if (!user) return <LoadingState />;
   return <>{children(user)}</>;
 }

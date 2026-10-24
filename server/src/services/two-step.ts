@@ -18,8 +18,6 @@ const RESEND_GAP_SECONDS = 30;
 const MAX_CODES_PER_HOUR = 6;
 /** Sign-in methods that prove the person has the inbox: an emailed reset link or code. */
 const EMAIL_PROVEN = new Set(["recovery", "otp", "magiclink"]);
-/** Confirmed sessions remembered in memory, so most requests skip the database. */
-const CACHE_LIMIT = 10_000;
 
 export interface SignInStatus {
   locked: boolean;
@@ -48,7 +46,6 @@ interface Logger {
  */
 export class TwoStep {
   private readonly key: Buffer;
-  private readonly verified = new Map<string, string>();
 
   constructor(
     private readonly db: Db,
@@ -57,6 +54,8 @@ export class TwoStep {
     private readonly email: { timeZone: string; appUrl: string | null },
     /** Without email set up, codes are written to the log instead (local development only). */
     private readonly logCodes: Logger | null,
+    /** A signed-in session quiet for longer than this must sign in again. */
+    private readonly idleMinutes = 10,
   ) {
     this.key = Buffer.from(hkdfSync("sha256", secret, Buffer.alloc(0), "poolfi-auth-codes", 32));
   }
@@ -133,7 +132,6 @@ export class TwoStep {
       // The right password and the right code: wrong passwords from before no longer count.
       await client.query("delete from sign_in_failures where email = $1", [email]);
     });
-    this.remember(sessionId, user.id);
   }
 
   /** Emails a new unlock code to a locked account. Says nothing about accounts that aren't locked. */
@@ -173,27 +171,42 @@ export class TwoStep {
     }
     await this.db.query("delete from sign_in_failures where email = $1", [normalize(user.email)]);
     await this.db.query("delete from verified_sessions where user_id = $1", [user.id]);
-    for (const [session, owner] of this.verified) if (owner === user.id) this.verified.delete(session);
   }
 
-  /** Lets a session use the app only once its emailed code was confirmed. */
+  /**
+   * Lets a session use the app only once its emailed code was confirmed, and only while
+   * it's in use: each request counts as activity, and a session quiet for longer than
+   * the idle limit is closed (signing in again takes the password and a new code).
+   */
   async requireVerified(user: AuthUser): Promise<void> {
-    if (user.sessionId && (await this.isVerified(user.sessionId))) return;
+    if (user.sessionId) {
+      const [active] = await this.db.query<{ user_id: string }>(
+        `update verified_sessions set last_seen_at = now()
+         where session_id = $1 and last_seen_at > now() - make_interval(mins => $2)
+         returning user_id`,
+        [user.sessionId, this.idleMinutes],
+      );
+      if (active) return;
+      const [closed] = await this.db.query<{ session_id: string }>(
+        "delete from verified_sessions where session_id = $1 returning session_id",
+        [user.sessionId],
+      );
+      if (closed) {
+        throw new ApiError(
+          401,
+          "session_expired",
+          `You were signed out after ${this.idleMinutes} minutes without activity. Sign in again to continue.`,
+        );
+      }
+    }
     throw new ApiError(403, "verification_required", "Type in the code we emailed you to finish signing in.");
   }
 
   private async isVerified(sessionId: string): Promise<boolean> {
-    if (this.verified.has(sessionId)) return true;
     const [row] = await this.db.query<{ user_id: string }>("select user_id from verified_sessions where session_id = $1", [
       sessionId,
     ]);
-    if (row) this.remember(sessionId, row.user_id);
     return Boolean(row);
-  }
-
-  private remember(sessionId: string, userId: string) {
-    if (this.verified.size >= CACHE_LIMIT) this.verified.clear();
-    this.verified.set(sessionId, userId);
   }
 
   private passwordSession(user: AuthUser): { sessionId: string; email: string } {

@@ -8,6 +8,7 @@ import { useSession } from "@/components/providers";
 import { AuthShell } from "@/components/shells";
 import { ErrorText, ProgressBar, Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
+import { markActive } from "@/lib/idle";
 import { CODE_LENGTH, safeNextPath } from "@/lib/signin";
 import { haptic, sound } from "@/lib/sound";
 import s from "./auth.module.css";
@@ -49,6 +50,8 @@ export function CodeScreen({ to, purpose }: { to: string; purpose: "sign_in" | "
         return;
       }
       const { needsProfile } = await api.verifyCode(code);
+      // Just signed in: that's activity, so the idle sign-out starts counting from now.
+      markActive(true);
       setState("verified");
       sound.win();
       haptic([20, 30, 20]);

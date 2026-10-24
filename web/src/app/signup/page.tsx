@@ -9,6 +9,7 @@ import { AuthShell } from "@/components/shells";
 import { BusyButton, ErrorText, ProgressBar } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { useAction } from "@/lib/hooks";
+import { IDLE_MINUTES } from "@/lib/idle";
 import { PasswordField } from "./PasswordField";
 import { CODE_LENGTH, MIN_PASSWORD } from "@/lib/signin";
 import s from "./auth.module.css";
@@ -93,6 +94,11 @@ function SignUp() {
             <Link className={s.link} href={`/forgot?${new URLSearchParams(to ? { email: to } : {})}`}>
               Forgot password?
             </Link>
+          </p>
+        )}
+        {params.get("idle") && !go.error && (
+          <p className="banner banner-blue" style={{ marginTop: 12 }}>
+            You were signed out after {IDLE_MINUTES} minutes without activity. Sign in to continue.
           </p>
         )}
         {params.get("unlocked") && !go.error && (

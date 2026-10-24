@@ -42,6 +42,7 @@ export function createServices(
       { appUrl: config.appUrl, timeZone: config.email?.timeZone ?? "Africa/Lagos" },
       // Without Resend (local development only), codes go to the log.
       config.email || mailer ? null : log,
+      config.sessionIdleMinutes,
     ),
     pools: new Pools(db, chain, contract, wallets),
     refunds: new RefundJob(db, chain, contract, wallets, config.refundJob.concurrency, log, notify),

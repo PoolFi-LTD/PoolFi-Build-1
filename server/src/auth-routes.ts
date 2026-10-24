@@ -15,6 +15,7 @@ const UnlockInput = z.object({ email: z.email().max(320), code: z.string().trim(
  * code PoolFi emails. Mounted at /v1/auth.
  */
 export function authRoutes(twoStep: TwoStep, tokenOnly: (request: FastifyRequest) => Promise<AuthUser>, config: Config) {
+  const verifiedOnly = async (request: FastifyRequest) => twoStep.requireVerified(await tokenOnly(request));
   return async (app: FastifyInstance) => {
     // Before asking for a password: is the account locked, and how many tries are left?
     app.post("/status", async (request) => twoStep.status(parse(EmailInput, request.body).email));
@@ -39,6 +40,12 @@ export function authRoutes(twoStep: TwoStep, tokenOnly: (request: FastifyRequest
       const { email, code } = parse(UnlockInput, request.body);
       await twoStep.unlock(email, code);
       return { unlocked: true };
+    });
+
+    // The app reports activity (taps, typing) so a session in use isn't closed as idle.
+    app.post("/active", async (request, reply) => {
+      await verifiedOnly(request);
+      return reply.status(204).send();
     });
 
     // After setting a new password from the emailed reset link.

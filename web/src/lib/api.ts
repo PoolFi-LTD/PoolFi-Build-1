@@ -43,6 +43,8 @@ export interface PoolFiApi {
   /** On the page that link opens: sets the new password. Then everyone signs in again. */
   setNewPassword(password: string): Promise<void>;
   saveProfile(profile: { firstName: string; lastName: string; avatar: Avatar }): Promise<User>;
+  /** Tells the server the person is active, so their session isn't closed as idle. */
+  keepAlive(): Promise<void>;
   /** The Me screen: on-time streak, badges and preferences. */
   getAchievements(): Promise<Achievements>;
   savePreferences(preferences: { remindersOn: boolean }): Promise<Achievements>;

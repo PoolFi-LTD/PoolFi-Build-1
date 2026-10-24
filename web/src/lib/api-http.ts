@@ -5,6 +5,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { PoolFiApi } from "./api";
 import { ApiError } from "./errors";
+import { SESSION_EXPIRED_EVENT } from "./idle";
 import type { Receipt, User } from "./types";
 
 let supabaseClient: SupabaseClient | null = null;
@@ -103,6 +104,11 @@ async function request<T>(method: "GET" | "POST" | "PUT" | "PATCH", path: string
   const data = (await response.json().catch(() => null)) as {
     error?: { code: string; message: string; details?: Record<string, unknown> };
   } | null;
+  if (response.status === 401 && data?.error?.code === "session_expired") {
+    // Closed after too long without activity: sign out here too, and let the app send people to sign in.
+    await supabase().auth.signOut({ scope: "local" }).catch(() => {});
+    if (typeof window !== "undefined") window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+  }
   if (!response.ok) {
     throw new ApiError(
       data?.error?.code ?? "request_failed",
@@ -147,7 +153,8 @@ export const httpApi: PoolFiApi = {
     } catch (error) {
       // Signed in with a password but the emailed code isn't confirmed yet: not in.
       if (error instanceof ApiError && error.code === "verification_required") return null;
-      // A session the server no longer accepts counts as signed out.
+      // A session the server no longer accepts (or closed as idle) counts as signed out.
+      if (error instanceof ApiError && error.code === "session_expired") return null;
       if (error instanceof ApiError && error.code === "unauthenticated") {
         await supabase().auth.signOut({ scope: "local" });
         return null;
@@ -234,8 +241,13 @@ export const httpApi: PoolFiApi = {
   getAchievements: () => get("/me/achievements"),
   savePreferences: (preferences) => request("PUT", "/me/preferences", preferences),
 
+  // Signs out this device only; other devices stay signed in.
   async signOut() {
-    await supabase().auth.signOut();
+    await supabase().auth.signOut({ scope: "local" });
+  },
+
+  keepAlive: async () => {
+    await auth("/active");
   },
 
   getHome: () => get("/home"),

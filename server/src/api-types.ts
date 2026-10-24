@@ -49,8 +49,11 @@ export interface PoolSummary {
   /** What each diver pays, including the fee share when divers cover the fee. */
   share: Usdc;
   expectedCount: number;
-  goal: Usdc;
-  raised: Usdc;
+  /** How full the pool is, 0 to 100. Everyone in the pool sees this. */
+  progress: number;
+  /** The money totals: only for the lifeguard and approvers, null for divers. */
+  goal: Usdc | null;
+  raised: Usdc | null;
   paidCount: number;
   deadline: string;
   lifeguard: { id: string; name: string };
@@ -83,9 +86,10 @@ export interface Approver {
 export interface Payout {
   requestedAt: string;
   destination: "wallet" | "bank";
-  gross: Usdc;
-  fee: Usdc;
-  net: Usdc;
+  /** The amounts: only for the lifeguard and approvers, null for divers. */
+  gross: Usdc | null;
+  fee: Usdc | null;
+  net: Usdc | null;
   approvalsNeeded: number;
   approvals: number;
   paidAt: string | null;
@@ -123,7 +127,8 @@ export interface PoolDetail extends PoolSummary {
   yourRefund: Usdc | null;
   yourReceiptRef: string | null;
   closedAt: string | null;
-  totalRefunded: Usdc;
+  /** Only for the lifeguard and approvers, null for divers. */
+  totalRefunded: Usdc | null;
 }
 
 /** A badge on the Me screen, earned by doing something in PoolFi. */
@@ -221,8 +226,8 @@ export interface InviteView {
     status: PoolStatus;
     paidCount: number;
     expectedCount: number;
-    raised: Usdc;
-    goal: Usdc;
+    /** How full the pool is, 0 to 100. The money totals are only for the lifeguard. */
+    progress: number;
     approverCount: number;
     pickYourName: boolean;
     allowNotOnList: boolean;

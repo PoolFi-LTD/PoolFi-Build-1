@@ -71,7 +71,7 @@ function Status() {
                     l1="Payout"
                     l2="landed."
                     k="You received"
-                    value={payout.net}
+                    value={payout.net ?? 0}
                     format={(v) => <Money value={v} />}
                     text="Added to your PoolFi balance. A full record is saved in your pool history."
                     pills={["🎉 Full pool badge"]}
@@ -84,7 +84,7 @@ function Status() {
                 <Drip size={96} mood="cheer" pop />
                 <h2 className="t-h1" style={{ fontSize: 28 }}>Payout landed</h2>
                 <div className="t-amount-l">
-                  <Money value={payout.net} />
+                  <Money value={payout.net ?? 0} />
                 </div>
                 <p className="muted">Added to your PoolFi balance. A full record is saved in your pool history.</p>
                 <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
@@ -117,7 +117,7 @@ function Status() {
                 <Drip size={80} pop />
                 <h2 className="t-h2">Waiting for your approvers</h2>
                 <p className="t-small muted">
-                  {formatUsdc(payout.net)} from {p.name}. We&apos;ve let them know in the app.
+                  {formatUsdc(payout.net ?? 0)} from {p.name}. We&apos;ve let them know in the app.
                 </p>
               </div>
               <div style={{ padding: 16, border: "2px solid var(--line-soft)", borderRadius: 18 }}>

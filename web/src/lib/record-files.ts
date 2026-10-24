@@ -1,5 +1,5 @@
 import { dateTime, fullDateTime } from "./format";
-import { formatUsdc } from "./money";
+import { amountOrDash, formatUsdc } from "./money";
 import type { PoolRecord } from "./types";
 
 function save(blob: Blob, name: string) {
@@ -41,10 +41,10 @@ export async function downloadStatement(record: PoolRecord, withContacts: boolea
   doc.text(`Pool ID ${p.code}   ·   Lifeguard ${p.lifeguard.name}   ·   Reference ${record.reference}`, 40, 148);
   const paid = record.rows.filter((r) => r.status !== "not_paid");
   const summary: [string, string][] = [
-    ["Raised", formatUsdc(p.raised)],
+    ["Raised", amountOrDash(p.raised)],
     ["Divers paid", `${paid.length} of ${p.expectedCount}`],
-    ["PoolFi fee", p.payout ? formatUsdc(p.payout.fee) : "—"],
-    [p.status === "refunded" ? "Refunded" : "Paid out", p.status === "refunded" ? formatUsdc(p.totalRefunded) : p.payout ? formatUsdc(p.payout.net) : "Not yet"],
+    ["PoolFi fee", p.payout ? amountOrDash(p.payout.fee) : "—"],
+    [p.status === "refunded" ? "Refunded" : "Paid out", p.status === "refunded" ? amountOrDash(p.totalRefunded) : p.payout ? amountOrDash(p.payout.net) : "Not yet"],
   ];
   summary.forEach(([k, v], i) => {
     const x = 40 + i * 130;
@@ -99,7 +99,7 @@ export async function downloadSummaryImage(record: PoolRecord) {
   g.fillText(`${p.emoji} ${p.name}`, 72, 220, W - 144);
   g.font = `500 34px ${font}`;
   g.globalAlpha = 0.9;
-  g.fillText(`${formatUsdc(p.raised)} raised · ${names.length} of ${p.expectedCount} paid`, 72, 290);
+  g.fillText(`${p.raised !== null ? `${formatUsdc(p.raised)} raised · ` : ""}${names.length} of ${p.expectedCount} paid`, 72, 290);
   g.globalAlpha = 1;
   g.fillStyle = "rgba(255,255,255,0.12)";
   g.beginPath();

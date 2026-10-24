@@ -34,3 +34,8 @@ export function grossShare(amount: Usdc, feeBps: number, covered: boolean): Usdc
 export function feeOf(gross: Usdc, feeBps: number): Usdc {
   return Math.floor((Math.round(gross * 1e7) * feeBps) / 10_000) / 1e7;
 }
+
+/** A total only the lifeguard (and approvers) are sent; a dash for everyone else. */
+export function amountOrDash(value: Usdc | null): string {
+  return value === null ? "—" : formatUsdc(value);
+}

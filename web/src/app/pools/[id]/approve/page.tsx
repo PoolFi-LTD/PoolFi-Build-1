@@ -150,7 +150,7 @@ function Approve() {
                 <Avatar name={p.lifeguard.name} size={60} />
                 <p className="t-small muted" style={{ marginTop: 4 }}>{p.lifeguard.name} is asking for</p>
                 <div className="t-amount-xl">
-                  <Money value={payout.net} />
+                  <Money value={payout.net ?? 0} />
                 </div>
                 <p className="t-small muted">
                   from {p.emoji} {p.name}
@@ -160,7 +160,7 @@ function Approve() {
                 <div>
                   <dt>Raised</dt>
                   <dd>
-                    {formatUsdc(payout.gross)} from {p.paidCount} of {p.expectedCount} divers
+                    {formatUsdc(payout.gross ?? 0)} from {p.paidCount} of {p.expectedCount} divers
                   </dd>
                 </div>
                 <div>
@@ -169,7 +169,7 @@ function Approve() {
                 </div>
                 <div>
                   <dt>PoolFi fee</dt>
-                  <dd>{formatUsdc(payout.fee)}</dd>
+                  <dd>{formatUsdc(payout.fee ?? 0)}</dd>
                 </div>
                 <div>
                   <dt>Approvals</dt>
@@ -248,7 +248,7 @@ function Approve() {
           l2="Thank you."
           text={
             cheer.payout?.paidAt
-              ? `That's ${cheer.payout.approvals} of ${cheer.payout.approvalsNeeded}. ${cheer.lifeguard.name.split(" ")[0]}'s ${formatUsdc(cheer.payout.net)} payout is on its way, and everyone in the pool can see it.`
+              ? `That's ${cheer.payout.approvals} of ${cheer.payout.approvalsNeeded}. ${cheer.lifeguard.name.split(" ")[0]}'s ${formatUsdc(cheer.payout.net ?? 0)} payout is on its way, and everyone in the pool can see it.`
               : `${cheer.payout?.approvals} of ${cheer.payout?.approvalsNeeded} approvals so far. We'll pay out once enough approvers agree.`
           }
           pills={["🔑 Trusted approver"]}

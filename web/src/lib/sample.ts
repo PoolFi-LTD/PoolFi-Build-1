@@ -402,18 +402,22 @@ function roleOf(p: SamplePool, userId: string): PoolSummary["role"] | null {
 function summary(s: SampleState, p: SamplePool, userId: string): PoolSummary {
   const now = Date.now();
   const lifeguard = s.users[p.lifeguardId];
+  const role = roleOf(p, userId) ?? "diver";
+  // Only the lifeguard and approvers are sent the money totals.
+  const totals = role !== "diver";
   return {
     id: p.id,
     code: p.code,
     emoji: p.emoji,
     name: p.name,
     type: p.type,
-    role: roleOf(p, userId) ?? "diver",
+    role,
     status: statusOf(p, now),
     share: shareOf(p),
     expectedCount: p.expectedCount,
-    goal: goalOf(p),
-    raised: raisedOf(p),
+    progress: goalOf(p) > 0 ? Math.min(100, Math.floor((raisedOf(p) / goalOf(p)) * 100)) : 0,
+    goal: totals ? goalOf(p) : null,
+    raised: totals ? raisedOf(p) : null,
     paidCount: p.divers.filter((d) => d.paid).length,
     deadline: new Date(p.deadline).toISOString(),
     lifeguard: { id: lifeguard.id, name: fullName(lifeguard) },
@@ -449,9 +453,9 @@ function detail(s: SampleState, p: SamplePool, userId: string): PoolDetail {
     payout: p.payout && {
       requestedAt: new Date(p.payout.requestedAt).toISOString(),
       destination: p.payout.destination,
-      gross,
-      fee,
-      net: roundUsdc(gross - fee),
+      gross: base.raised === null ? null : gross,
+      fee: base.raised === null ? null : fee,
+      net: base.raised === null ? null : roundUsdc(gross - fee),
       approvalsNeeded: neededOf(p),
       approvals: approvers.filter((a) => a.status === "approved").length,
       paidAt: p.payout.paidAt ? new Date(p.payout.paidAt).toISOString() : null,
@@ -475,7 +479,7 @@ function detail(s: SampleState, p: SamplePool, userId: string): PoolDetail {
     yourRefund: base.status === "refunded" && mine?.paid ? mine.amount : null,
     yourReceiptRef: mine?.receiptRef ?? null,
     closedAt: p.payout?.paidAt ? new Date(p.payout.paidAt).toISOString() : base.status === "refunded" ? new Date(p.deadline).toISOString() : null,
-    totalRefunded: base.status === "refunded" ? raisedOf(p) : 0,
+    totalRefunded: base.raised === null ? null : base.status === "refunded" ? raisedOf(p) : 0,
   };
 }
 
@@ -862,7 +866,7 @@ export const sampleApi: PoolFiApi = {
       return {
         pool: {
           id: p.id, code: p.code, emoji: p.emoji, name: p.name, share: sum.share, deadline: sum.deadline, status: sum.status,
-          paidCount: sum.paidCount, expectedCount: p.expectedCount, raised: sum.raised, goal: sum.goal,
+          paidCount: sum.paidCount, expectedCount: p.expectedCount, progress: sum.progress,
           approverCount: p.approverIds.length, pickYourName: p.pickYourName, allowNotOnList: p.allowNotOnList,
         },
         lifeguard: { name: fullName(lifeguard), avatar: lifeguard.avatar },

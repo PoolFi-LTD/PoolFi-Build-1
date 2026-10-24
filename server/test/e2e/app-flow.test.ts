@@ -302,6 +302,15 @@ describe("a pool with approvers", () => {
   it("keeps each diver's payment private unless the lifeguard lets divers see them", async () => {
     const own = await app("GET", `/pools/${pool.id}`, people.dayo);
     expect(own.body).toMatchObject({ diversSeePayments: false, paidCount: 2 });
+    // The money totals are for the lifeguard (and approvers) only: divers get progress.
+    expect(own.body).toMatchObject({ progress: 100, raised: null, goal: null, totalRefunded: null, payout: { gross: null, fee: null, net: null } });
+    expect(own.body.activity.every((a: { kind: string; amount: number | null }) => a.kind === "payment" || a.amount === null)).toBe(true);
+    const invite = (await app("GET", `/invites/${pool.code}`)).body.pool;
+    expect(invite.progress).toBe(100);
+    expect(invite).not.toHaveProperty("raised");
+    const lifeguardView = (await app("GET", `/pools/${pool.id}`, people.lifeguard)).body;
+    expect(lifeguardView.raised).toBe((shareBase * 2) / 1e7);
+    expect((await app("GET", `/pools/${pool.id}`, people.tobi)).body.payout.net).not.toBeNull();
     expect(own.body.divers.map((d: { name: string }) => d.name)).toEqual(["Dayo Okeke"]);
     expect(own.body.activity.filter((a: { kind: string }) => a.kind === "payment").map((a: { title: string }) => a.title)).toEqual([
       "You paid into 300L Class Dues",

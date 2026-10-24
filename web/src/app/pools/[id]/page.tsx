@@ -11,7 +11,7 @@ import { RemindModal, ShareModal } from "@/components/share";
 import { AppShell, PageHead } from "@/components/shells";
 import { ComingSoon, EmptyState, ErrorText, Loaded, Money, Segmented, StatusPill, Toggle } from "@/components/ui";
 import { api } from "@/lib/api";
-import { countdown, dayDate, fullDateTime, percent } from "@/lib/format";
+import { countdown, dayDate, fullDateTime } from "@/lib/format";
 import { useAction, useNow, useResource } from "@/lib/hooks";
 import { formatAmount, formatUsdc } from "@/lib/money";
 import type { Diver, PoolDetail } from "@/lib/types";
@@ -67,7 +67,7 @@ const newestFirst = (a: Diver, b: Diver) => (b.paidAt ?? "").localeCompare(a.pai
 function usePoolMotion(pool: PoolDetail, tank: React.RefObject<HTMLDivElement | null>) {
   const [seen] = useState(() => readSeen(pool.id));
   const counted = useRef(seen?.paid ?? pool.paidCount);
-  const pct = percent(pool.raised, pool.goal);
+  const pct = pool.progress;
 
   useEffect(() => {
     const arrived = pool.paidCount - counted.current;
@@ -89,14 +89,15 @@ function usePoolMotion(pool: PoolDetail, tank: React.RefObject<HTMLDivElement | 
 }
 
 function Tank({ pool, from, tank }: { pool: PoolDetail; from?: number; tank: React.RefObject<HTMLDivElement | null> }) {
-  const pct = percent(pool.raised, pool.goal);
+  // Only the lifeguard (and approvers) see the money; divers see how full it is.
+  const totals = pool.raised !== null && pool.goal !== null;
   return (
     <WaterTank
       ref={tank}
-      pct={pct}
+      pct={pool.progress}
       from={from}
-      line={`${formatAmount(pool.raised)} of ${formatUsdc(pool.goal)}`}
-      sub={`${pool.paidCount} of ${pool.expectedCount} divers have paid`}
+      line={totals ? `${formatAmount(pool.raised ?? 0)} of ${formatUsdc(pool.goal ?? 0)}` : `${pool.paidCount} of ${pool.expectedCount} divers have paid`}
+      sub={totals ? `${pool.paidCount} of ${pool.expectedCount} divers have paid` : `Only ${pool.lifeguard.name.split(" ")[0]} sees the amounts`}
     />
   );
 }
@@ -134,7 +135,7 @@ function FullPool({ pool, motion }: { pool: PoolDetail; motion: ReturnType<typeo
       l1={pool.name.length <= 16 ? pool.name : "Your pool"}
       l2="is full."
       k="Raised"
-      value={pool.raised}
+      value={pool.raised ?? 0}
       format={(v) => <Money value={v} />}
       text="Everyone has paid. Request your payout whenever you are ready."
       buttons={[
@@ -206,7 +207,7 @@ function Details({ pool }: { pool: PoolDetail }) {
       </div>
       <div>
         <dt>Goal</dt>
-        <dd>{formatUsdc(pool.goal)}</dd>
+        <dd>{formatUsdc(pool.goal ?? 0)}</dd>
       </div>
       <div>
         <dt>PoolFi fee</dt>
@@ -304,7 +305,7 @@ function LifeguardView({ pool, now, reload, onShare }: { pool: PoolDetail; now: 
           {pool.status === "paidout" && pool.payout && (
             <p className="note" style={{ background: "var(--green-50)", color: "var(--green-ink)" }}>
               <Icon name="check" />
-              {formatUsdc(pool.payout.net)} paid out to you. Reference {pool.payout.reference}.
+              {formatUsdc(pool.payout.net ?? 0)} paid out to you. Reference {pool.payout.reference}.
             </p>
           )}
           {pool.status === "refunded" && (
@@ -486,7 +487,7 @@ function ApproverView({ pool, now }: { pool: PoolDetail; now: number }) {
 /** A diver's view of a pool that missed its goal: their money is back. */
 function RefundedView({ pool }: { pool: PoolDetail }) {
   const [bank, setBank] = useState(false);
-  const pct = percent(pool.raised, pool.goal);
+  const pct = pool.progress;
   return (
     <div className={s.narrow}>
       {/* The water drains away: the money went back. */}
@@ -572,7 +573,12 @@ function PoolPage() {
             {p.status === "paidout" && p.role !== "lifeguard" && p.payout && (
               <p className="note" style={{ background: "var(--green-50)", color: "var(--green-ink)" }}>
                 <Icon name="check" />
-                Paid out to {p.lifeguard.name}: <Money value={p.payout.net} />
+                Paid out to {p.lifeguard.name}
+                {p.payout.net !== null && (
+                  <>
+                    : <Money value={p.payout.net} />
+                  </>
+                )}
               </p>
             )}
             <ShareModal open={share} onClose={() => setShare(false)} pool={p} title={opened ? "Your pool is ready. Share the link" : "Share the link"} />

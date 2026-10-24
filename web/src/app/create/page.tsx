@@ -139,7 +139,7 @@ function Made({ pool }: { pool: PoolDetail }) {
           <div style={{ minWidth: 0, flex: 1 }}>
             <div className="t-h3" style={{ fontWeight: 700 }}>{pool.name}</div>
             <div className="t-small muted">
-              {formatUsdc(pool.share)} each, goal {formatUsdc(pool.goal)}
+              {formatUsdc(pool.share)} each, goal {formatUsdc(pool.goal ?? 0)}
             </div>
           </div>
         </div>

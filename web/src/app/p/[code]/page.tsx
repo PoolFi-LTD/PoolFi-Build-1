@@ -11,7 +11,7 @@ import { InviteShell } from "@/components/shells";
 import { Avatar, BusyButton, ComingSoon, ErrorText, Loaded, Modal } from "@/components/ui";
 import { DepositPanel, MethodButton } from "@/components/wallet";
 import { api } from "@/lib/api";
-import { countdown, percent } from "@/lib/format";
+import { countdown } from "@/lib/format";
 import { useAction, useNow, useResource } from "@/lib/hooks";
 import { formatAmount, formatUsdc } from "@/lib/money";
 import type { InviteView, Wallet } from "@/lib/types";
@@ -189,7 +189,7 @@ function InviteBody({
   const p = inv.pool;
   const firstName = inv.lifeguard.name.split(" ")[0];
   const left = countdown(p.deadline, now);
-  const pct = percent(p.raised, p.goal);
+  const pct = p.progress;
   const open = p.status === "active" || p.status === "met";
   const matches = useMemo(() => {
     const needle = q.trim().toLowerCase();

@@ -199,6 +199,10 @@ export class PoolViews {
       const viewer = byPool.get(row.id);
       const role: Role =
         row.admin_user_id === viewerId ? "lifeguard" : viewer?.approver ? "approver" : "diver";
+      // The money totals are for the lifeguard (and approvers, who approve the payout); divers see progress.
+      const totals = role !== "diver";
+      const progress =
+        state.goalAmount > 0n ? Math.min(100, Number((state.totalContributed * 100n) / state.goalAmount)) : 0;
       return {
         row,
         state,
@@ -212,8 +216,9 @@ export class PoolViews {
           status: statusOf(state),
           share: toUsdc(row.share_amount),
           expectedCount: row.expected_count,
-          goal: toUsdc(state.goalAmount),
-          raised: toUsdc(state.totalContributed),
+          progress,
+          goal: totals ? toUsdc(state.goalAmount) : null,
+          raised: totals ? toUsdc(state.totalContributed) : null,
           paidCount: viewer?.paid_count ?? 0,
           deadline: row.deadline.toISOString(),
           lifeguard: { id: row.admin_user_id, name: nameOf(lifeguards.get(row.admin_user_id)) },
@@ -233,13 +238,19 @@ export class PoolViews {
         [row.id],
       ),
       this.latestRequest(row.id),
-      viewerId ? this.paymentsHiddenIn([row], viewerId).then((hidden) => this.activity([row.id], viewerId, 50, hidden)) : this.activity([row.id], null, 50),
+      viewerId
+        ? Promise.all([this.paymentsHiddenIn([row], viewerId), this.diverIn([row], viewerId)]).then(([hidden, diver]) =>
+            this.activity([row.id], viewerId, 50, hidden, diver),
+          )
+        : this.activity([row.id], null, 50, [], [row.id]),
       viewerId ? this.viewerMoney(row.id, viewerId) : null,
       this.feeBps(),
     ]);
     if (!built) throw notFound();
     const { summary, state } = built;
     const isLifeguard = summary.role === "lifeguard";
+    // The money totals are for the lifeguard and approvers; divers see progress only.
+    const totals = summary.role !== "diver";
     // Unless the lifeguard allows it, a diver sees only their own payment (and the totals).
     const hidePayments = summary.role === "diver" && !row.divers_see_payments;
 
@@ -263,9 +274,9 @@ export class PoolViews {
       payout = {
         requestedAt: request.requested_at.toISOString(),
         destination: request.destination,
-        gross: toUsdc(gross),
-        fee: toUsdc(fee),
-        net: toUsdc(net),
+        gross: totals ? toUsdc(gross) : null,
+        fee: totals ? toUsdc(fee) : null,
+        net: totals ? toUsdc(net) : null,
         approvalsNeeded: request.approvals_needed,
         approvals: request.votes.filter((v) => v.vote === "approved").length,
         paidAt: request.paid_at?.toISOString() ?? null,
@@ -304,7 +315,7 @@ export class PoolViews {
       yourReceiptRef: mine?.receiptRef ?? null,
       closedAt: closedAt?.toISOString() ?? null,
       // Everything paid into a pool that missed its goal goes back; the refund job sends it.
-      totalRefunded: refunded ? toUsdc(state.totalContributed) : 0,
+      totalRefunded: !totals ? null : refunded ? toUsdc(state.totalContributed) : 0,
     };
   }
 
@@ -341,7 +352,13 @@ export class PoolViews {
    * `hidePaymentsIn` (pools where the viewer is a diver who can't see others'
    * payments) only the viewer's own payments are listed.
    */
-  async activity(poolIds: string[], viewerId: string | null, limit: number, hidePaymentsIn: string[] = []): Promise<ActivityItem[]> {
+  async activity(
+    poolIds: string[],
+    viewerId: string | null,
+    limit: number,
+    hidePaymentsIn: string[] = [],
+    hideTotalsIn: string[] = [],
+  ): Promise<ActivityItem[]> {
     if (poolIds.length === 0) return [];
     const rows = await this.db.query<ActivityRow>(
       `select a.*, p.name as pool_name from activity a join pools p on p.id = a.pool_id
@@ -355,7 +372,9 @@ export class PoolViews {
       kind: row.kind,
       title: activityTitle(row, viewerId),
       at: row.at.toISOString(),
-      amount: row.amount === null ? null : toUsdc(row.amount),
+      // Pool totals (goal met, payout, refund) aren't for divers; a payment is one share, which they know.
+      amount:
+        row.amount === null || (row.kind !== "payment" && hideTotalsIn.includes(row.pool_id)) ? null : toUsdc(row.amount),
       actorName: row.actor_name,
       poolId: row.pool_id,
     }));
@@ -366,7 +385,15 @@ export class PoolViews {
    * and the lifeguard keeps payments private: there they see only their own.
    */
   async paymentsHiddenIn(rows: AppPoolRow[], viewerId: string): Promise<string[]> {
-    const candidates = rows.filter((r) => r.admin_user_id !== viewerId && !r.divers_see_payments);
+    return this.diverIn(
+      rows.filter((r) => !r.divers_see_payments),
+      viewerId,
+    );
+  }
+
+  /** Of these pools, those where `viewerId` is a diver: not the lifeguard, not an approver. */
+  async diverIn(rows: AppPoolRow[], viewerId: string): Promise<string[]> {
+    const candidates = rows.filter((r) => r.admin_user_id !== viewerId);
     if (candidates.length === 0) return [];
     const approving = await this.db.query<{ pool_id: string }>(
       "select pool_id from pool_approvers where user_id = $1 and pool_id = any($2::uuid[])",

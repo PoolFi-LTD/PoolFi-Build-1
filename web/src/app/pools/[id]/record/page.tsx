@@ -8,7 +8,7 @@ import { Loaded, Modal, StatusPill, Toggle } from "@/components/ui";
 import { api, messageOf } from "@/lib/api";
 import { dateTime, shortDate } from "@/lib/format";
 import { useResource } from "@/lib/hooks";
-import { formatUsdc } from "@/lib/money";
+import { amountOrDash, formatUsdc } from "@/lib/money";
 import { downloadCsv, downloadStatement, downloadSummaryImage } from "@/lib/record-files";
 
 function Tile({ label, value, index }: { label: string; value: string; index: number }) {
@@ -74,10 +74,10 @@ function Record() {
           <>
             <PageHead back={`/pools/${id}`} title={`${p.emoji} ${p.name}`} subtitle={subtitle} aside={<StatusPill status={p.status} />} />
             <div className="grid-4">
-              <Tile index={0} label="Raised" value={formatUsdc(p.raised)} />
+              <Tile index={0} label="Raised" value={amountOrDash(p.raised)} />
               <Tile index={1} label="Divers paid" value={`${paid} of ${p.expectedCount}`} />
-              <Tile index={2} label="PoolFi fee" value={p.payout ? formatUsdc(p.payout.fee) : "—"} />
-              <Tile index={3} label={p.status === "refunded" ? "Refunded" : "Paid out"} value={p.status === "refunded" ? formatUsdc(p.totalRefunded) : p.payout?.paidAt ? formatUsdc(p.payout.net) : "Not yet"} />
+              <Tile index={2} label="PoolFi fee" value={p.payout ? amountOrDash(p.payout.fee) : "—"} />
+              <Tile index={3} label={p.status === "refunded" ? "Refunded" : "Paid out"} value={p.status === "refunded" ? amountOrDash(p.totalRefunded) : p.payout?.paidAt ? amountOrDash(p.payout.net) : "Not yet"} />
             </div>
             <div className="grid-3">
               <Download emoji="📄" title="Statement PDF" detail="Branded, every contribution, can be checked" busy={busy === "pdf"} onClick={() => run("pdf", () => downloadStatement(r, contacts && withContacts, checkUrl))} />

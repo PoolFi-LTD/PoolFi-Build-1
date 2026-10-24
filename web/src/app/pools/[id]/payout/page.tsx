@@ -26,8 +26,8 @@ function RequestPayout() {
       <PageHead back={`/pools/${id}`} title="Request payout" />
       <Loaded resource={pool}>
         {(p) => {
-          const fee = feeOf(p.raised, p.feeBps);
-          const net = roundUsdc(p.raised - fee);
+          const fee = feeOf(p.raised ?? 0, p.feeBps);
+          const net = roundUsdc((p.raised ?? 0) - fee);
           if (p.role !== "lifeguard" || p.status !== "met") {
             return (
               <div className="note">
@@ -62,7 +62,7 @@ function RequestPayout() {
               <dl className="kv">
                 <div>
                   <dt>Raised from {p.paidCount} divers</dt>
-                  <dd>{formatUsdc(p.raised)}</dd>
+                  <dd>{formatUsdc(p.raised ?? 0)}</dd>
                 </div>
                 <div>
                   <dt>PoolFi fee ({p.feeBps / 100}%){p.feeCoveredByDivers ? ", covered by divers" : ""}</dt>

@@ -97,12 +97,13 @@ export class Account {
     const [built, balance, activity, approvals, locked] = await Promise.all([
       this.views.summaries(rows, user.id),
       address ? this.chain.usdcBalance(address) : Promise.resolve(0n),
-      this.views.paymentsHiddenIn(rows, user.id).then((hidden) =>
+      Promise.all([this.views.paymentsHiddenIn(rows, user.id), this.views.diverIn(rows, user.id)]).then(([hidden, diver]) =>
         this.views.activity(
           rows.map((r) => r.id),
           user.id,
           4,
           hidden,
+          diver,
         ),
       ),
       // Approvers who haven't voted on a waiting payout yet.
@@ -164,6 +165,7 @@ export class Account {
       user.id,
       100,
       await this.views.paymentsHiddenIn(rows, user.id),
+      await this.views.diverIn(rows, user.id),
     );
   }
 

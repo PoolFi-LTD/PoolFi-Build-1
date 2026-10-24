@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState, type CSSProperties, type ReactNode, type Ref } from "react";
-import { ago, closesIn, percent } from "@/lib/format";
+import { ago, closesIn } from "@/lib/format";
 import { formatAmount, formatUsdc } from "@/lib/money";
 import type { ActivityItem, Diver, PoolSummary } from "@/lib/types";
 import { Drip } from "./Drip";
@@ -15,7 +15,7 @@ import { Avatar, Money, PoolPill, StatusPill, Toggle } from "./ui";
 const ROLE: Record<PoolSummary["role"], string> = { lifeguard: "Lifeguard", diver: "Diver", approver: "Approver" };
 
 export function PoolRow({ pool, now, index = 0 }: { pool: PoolSummary; now: number; index?: number }) {
-  const pct = percent(pool.raised, pool.goal);
+  const pct = pool.progress;
   const when =
     pool.status === "active" ? (
       <span className={s.warn}>{closesIn(pool.deadline, now)}</span>
@@ -44,7 +44,7 @@ export function PoolRow({ pool, now, index = 0 }: { pool: PoolSummary; now: numb
         <i style={{ width: `${pct}%` }} />
       </div>
       <div className={s.poolFoot}>
-        {pool.role === "lifeguard" ? (
+        {pool.role === "lifeguard" && pool.raised !== null && pool.goal !== null ? (
           <>
             <span>
               <b>{formatAmount(pool.raised)} USDC</b> raised

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Instrument_Serif, Inter, Space_Grotesk } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { SPLASH_SCRIPT } from "@/lib/splash";
@@ -13,6 +13,13 @@ const instrumentSerif = Instrument_Serif({ subsets: ["latin"], weight: "400", st
 export const metadata: Metadata = {
   title: "PoolFi",
   description: "Group money. Finally fixed. Collect class dues, birthday money and office welfare with one link.",
+  // Installed to an iPhone's home screen, PoolFi opens like an app (and can show notifications).
+  appleWebApp: { capable: true, title: "PoolFi", statusBarStyle: "default" },
+  icons: { apple: "/apple-touch-icon.png" },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#1b4fd8",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

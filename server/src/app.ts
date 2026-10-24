@@ -7,6 +7,7 @@ import { createAuthenticator, type AuthUser } from "./auth.ts";
 import type { Config } from "./config.ts";
 import type { Db } from "./db.ts";
 import type { Mailer } from "./email/mailer.ts";
+import type { PushSender } from "./services/push.ts";
 import { ApiError } from "./errors.ts";
 import { formatUsdc, isUsdcAmount, parseUsdc } from "./money.ts";
 import { parse } from "./parse.ts";
@@ -20,13 +21,15 @@ export interface AppDeps {
   chain: Chain;
   /** Where emails go; Resend from the config unless given (tests catch them instead). */
   mailer?: Mailer;
+  /** Delivers device notifications; Web Push from the config unless given (tests catch them). */
+  pushSender?: PushSender;
 }
 
 const DepositInput = z.object({
   amount: z.string().refine(isUsdcAmount, "must be a USDC amount, e.g. 50 or 12.5"),
 });
 
-export async function buildApp({ config, db, chain, mailer }: AppDeps): Promise<{ app: FastifyInstance; services: Services }> {
+export async function buildApp({ config, db, chain, mailer, pushSender }: AppDeps): Promise<{ app: FastifyInstance; services: Services }> {
   const app = Fastify({
     logger: { level: config.logLevel, redact: ["req.headers.authorization"] },
     bodyLimit: 64 * 1024,
@@ -36,7 +39,7 @@ export async function buildApp({ config, db, chain, mailer }: AppDeps): Promise<
   const authenticate = createAuthenticator(config.auth, (reason) =>
     app.log.warn({ reason, check: config.auth.jwksUrl ? "jwks" : "shared secret" }, "sign-in token rejected"),
   );
-  const services = createServices({ config, db, chain, mailer }, app.log);
+  const services = createServices({ config, db, chain, mailer, pushSender }, app.log);
   const { wallets, deposits, pools } = services;
 
   /** A sign-in that finished both steps: the password, then the emailed code. */
@@ -124,7 +127,7 @@ export async function buildApp({ config, db, chain, mailer }: AppDeps): Promise<
     return pools.withdraw(await signedIn(request), request.params.poolId);
   });
 
-  await app.register(appRoutes(services.app, signedIn, config), { prefix: "/v1/app" });
+  await app.register(appRoutes(services.app, signedIn, config, services.push), { prefix: "/v1/app" });
   await app.register(authRoutes(services.twoStep, tokenOnly, config), { prefix: "/v1/auth" });
 
   return { app, services };

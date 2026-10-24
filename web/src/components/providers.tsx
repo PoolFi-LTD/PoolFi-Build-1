@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "@/lib/api";
+import { registerServiceWorker, syncPush } from "@/lib/push";
 import type { User } from "@/lib/types";
 import { sound } from "@/lib/sound";
 import { playSplash, reducedMotion, Splash } from "./motion";
@@ -102,6 +103,13 @@ export function Providers({ children }: { children: ReactNode }) {
   }, []);
 
   const signedIn = Boolean(user);
+  // The service worker shows device notifications; a device with them on follows whoever signs in.
+  useEffect(() => {
+    void registerServiceWorker();
+  }, []);
+  useEffect(() => {
+    if (signedIn) void syncPush();
+  }, [signedIn]);
   const refreshUnread = useCallback(() => {
     if (!signedIn) return;
     api.getNotifications().then(

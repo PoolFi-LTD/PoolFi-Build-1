@@ -55,6 +55,12 @@ export interface PoolFiApi {
   /** The notifications inbox, and how many are new since it was last marked read. */
   getNotifications(): Promise<NotificationsView>;
   markNotificationsRead(): Promise<void>;
+  /** Device notifications: the server's public key (null when not set up), and this device's subscription. */
+  getPushKey(): Promise<string | null>;
+  savePushSubscription(subscription: PushSubscriptionJSON): Promise<void>;
+  deletePushSubscription(endpoint: string): Promise<void>;
+  /** Sends a test notification to the signed-in user's devices; returns how many got it. */
+  sendTestPush(): Promise<number>;
   listContacts(): Promise<Contact[]>;
 
   // Pools

@@ -712,6 +712,12 @@ export const sampleApi: PoolFiApi = {
       return { items, unread: items.filter((n) => n.unread).length };
     }),
 
+  // Device notifications need the real backend (and its push keys).
+  getPushKey: () => respond(() => null, 50),
+  savePushSubscription: () => respond(() => undefined, 50),
+  deletePushSubscription: () => respond(() => undefined, 50),
+  sendTestPush: () => respond(() => 0, 50),
+
   markNotificationsRead: () =>
     respond(() => {
       load().notificationsSeenAt = Date.now();

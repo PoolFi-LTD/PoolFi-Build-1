@@ -88,6 +88,12 @@ const EnvSchema = z
     RESEND_API_KEY: z.string().startsWith("re_", "must be a Resend API key (re_...)").optional(),
     EMAIL_FROM: z.string().min(3).optional(),
     EMAIL_REPLY_TO: z.email().optional(),
+    // Device notifications (Web Push). Generate once with `npx web-push generate-vapid-keys`;
+    // never change them afterwards, or every device must turn notifications on again.
+    VAPID_PUBLIC_KEY: z.preprocess(unquote, z.string().min(40).optional()),
+    VAPID_PRIVATE_KEY: z.preprocess(unquote, z.string().min(20).optional()),
+    // Who push services can contact about these notifications: mailto: or https: URL.
+    VAPID_SUBJECT: z.preprocess(unquote, z.string().regex(/^(mailto:|https:)/, "must start with mailto: or https:").optional()),
     // Dates in emails are written in this time zone.
     EMAIL_TIME_ZONE: z
       .string()
@@ -174,6 +180,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
             maxPerDeposit: parseUsdc(e.DEPOSIT_MAX_USDC),
             dailyMax: parseUsdc(e.DEPOSIT_DAILY_MAX_USDC),
           }
+        : null,
+    push:
+      e.VAPID_PUBLIC_KEY && e.VAPID_PRIVATE_KEY
+        ? { publicKey: e.VAPID_PUBLIC_KEY, privateKey: e.VAPID_PRIVATE_KEY, subject: e.VAPID_SUBJECT ?? "mailto:hello@thepoolfi.com" }
         : null,
     email:
       e.RESEND_API_KEY && e.EMAIL_FROM

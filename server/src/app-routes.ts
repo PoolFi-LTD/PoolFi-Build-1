@@ -5,6 +5,7 @@ import { parse } from "./parse.ts";
 import { DepositInput, PreferencesInput, ProfileInput } from "./services/app/account.ts";
 import { AddDiversInput, CreatePoolInput, DeclineInput, PayInput, PayoutInput, PoolSettingsInput } from "./services/app/pools.ts";
 import type { Services } from "./services/index.ts";
+import { SubscriptionInput, type Push } from "./services/push.ts";
 
 /** Room for a profile photo or a long member list; everything else keeps the app's 64 KB limit. */
 const LARGE_BODY = 512 * 1024;
@@ -27,6 +28,7 @@ export function appRoutes(
   { account, pools }: Services["app"],
   signedIn: (request: FastifyRequest) => Promise<AuthUser>,
   config: Config,
+  push: Push,
 ) {
   const appUrl = (request: FastifyRequest) => requestAppUrl(config, request);
 
@@ -43,6 +45,26 @@ export function appRoutes(
     app.get("/home", async (request) => account.home(await signedIn(request)));
     app.get("/activity", async (request) => account.activity(await signedIn(request)));
     app.get("/notifications", async (request) => account.notifications(await signedIn(request)));
+    // Device notifications: the key browsers subscribe with, and each device's subscription.
+    app.get("/push/key", async () => ({ publicKey: push.publicKey }));
+    app.post("/push/subscriptions", async (request, reply) => {
+      const user = await signedIn(request);
+      await push.subscribe(user, parse(SubscriptionInput, request.body), request.headers["user-agent"] ?? null);
+      return reply.status(201).send({ subscribed: true });
+    });
+    app.post("/push/unsubscribe", async (request) => {
+      await push.unsubscribe(await signedIn(request), parse(SubscriptionInput.pick({ endpoint: true }), request.body).endpoint);
+      return { subscribed: false };
+    });
+    app.post("/push/test", async (request) => {
+      const user = await signedIn(request);
+      const sent = await push.toUsers([user.id], {
+        title: "🔔 Notifications are on",
+        body: "PoolFi will tell you about payments, approvals and payouts here.",
+        url: "/notifications",
+      });
+      return { sent };
+    });
     app.post("/notifications/read", async (request) => {
       await account.markNotificationsRead(await signedIn(request));
       return { read: true };

@@ -201,6 +201,10 @@ The screens in `web/` use `/v1/app`, shaped as `server/src/api-types.ts` describ
 | GET, POST | `/v1/app/notifications`, `/v1/app/notifications/read` | The notifications inbox with unread items; marking it read |
 | GET, PUT | `/v1/app/me/achievements`, `/v1/app/me/preferences` | Streak and badges for the Settings screen; `{ remindersOn }` |
 
+### Device notifications
+
+PoolFi pushes the moments that matter to people's phones and computers (Web Push), even with the app closed: a payment into your pool, the pool filling up, a payout waiting for your approval, an approval or decline, the payout landing, a reminder, a refund. Settings → Device notifications turns them on per device; the Notifications page offers it too. Android, Windows, macOS and Linux browsers work as they are; on iPhone and iPad (iOS 16.4+) PoolFi must first be added to the Home Screen (Share → Add to Home Screen) and opened from there. The service worker is `web/public/sw.js`; the app manifest is `web/src/app/manifest.ts`.
+
 ### Sign-in
 
 Signing in takes a password and then a code. Supabase checks the password in the browser; PoolFi then emails a 6-digit code (through Resend), and only a session whose code is confirmed can use `/v1/*`.
@@ -305,6 +309,7 @@ Migration `004_lock_tables.sql` closes PoolFi's tables to Supabase's public Data
 | `AUTH_JWKS_URL` or `AUTH_JWT_SECRET`, `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE` | From Supabase, as above |
 | `DEPOSIT_PROVIDER`, `TREASURY_SECRET` | `testnet-treasury` and the treasury's secret key (testnet only; leave both out to turn deposits off) |
 | `CRON_SECRET` | A long random string (`openssl rand -hex 32`) |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Device notifications (Web Push). Generate once with `npx web-push generate-vapid-keys`, and never change them: every device would have to turn notifications on again. Subject: `mailto:` an address you read |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Your Resend key, and the sender on your Resend-verified domain, e.g. `PoolFi <noreply@thepoolfi.com>`. Optional: `EMAIL_REPLY_TO`, and `EMAIL_TIME_ZONE` (default `Africa/Lagos`) |
 | `APP_URL` | Optional: the site's address for links in reminders, e.g. `https://thepoolfi.com` (defaults to the Vercel production domain) |
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | From Supabase. Setting these switches the app from sample data to the real backend |

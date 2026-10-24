@@ -8,6 +8,7 @@ import { Icon, type IconName } from "@/components/Icon";
 import { useSession, useToast } from "@/components/providers";
 import { AppShell, PageHead } from "@/components/shells";
 import { Avatar, Loaded, Modal, Toggle } from "@/components/ui";
+import { PushSetting } from "@/components/push";
 import { IS_TESTNET } from "@/components/wallet";
 import { api } from "@/lib/api";
 import { fullName } from "@/lib/format";
@@ -147,6 +148,7 @@ function Me({ user }: { user: User }) {
           <div className={s.rows}>
             <Row icon="wallet" label="Payout accounts" onClick={() => setSheet("payout")} />
             <Row icon="mail" label="Email" detail={user.email ?? undefined} />
+            <PushSetting rowClass={s.row} iconClass={s.rowIcon} labelClass={s.rowLabel} />
             <Row icon="bell" label="Deadline reminders">
               <Toggle on={achievements.data?.remindersOn ?? true} onChange={setReminders} label="Deadline reminders" />
             </Row>

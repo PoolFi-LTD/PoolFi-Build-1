@@ -463,7 +463,19 @@ export class AppPools {
       );
       if (paid) await this.recordPaid(client, row, request.id, gross, gross - feeOn(gross, bps), txHash);
     });
-    if (paid) await this.notify.paidOut(row, { gross, net: gross - feeOn(gross, bps), reference: payoutReference(row) }, appUrl);
+    if (paid) {
+      await this.notify.paidOut(row, { gross, net: gross - feeOn(gross, bps), reference: payoutReference(row) }, appUrl);
+    } else {
+      const [count] = await this.db.query<{ approvals: number }>(
+        "select count(*)::int as approvals from payout_votes where request_id = $1 and vote = 'approved'",
+        [request.id],
+      );
+      await this.notify.approvalGiven(row, {
+        approverName: nameOf(approver),
+        approvals: count?.approvals ?? 1,
+        needed: approvalsNeeded(state.approvers.length),
+      });
+    }
     return this.views.detail(row, user.id);
   }
 

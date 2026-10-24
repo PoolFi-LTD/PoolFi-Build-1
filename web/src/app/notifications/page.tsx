@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { useSession, useToast } from "@/components/providers";
+import { PushPrompt } from "@/components/push";
 import { AppShell, PageHead } from "@/components/shells";
 import { EmptyState, Loaded } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -76,6 +77,7 @@ function Notifications() {
           ) : undefined
         }
       />
+      <PushPrompt />
       <Loaded resource={inbox}>
         {(n) =>
           n.items.length ? (

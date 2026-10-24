@@ -10,7 +10,9 @@ import {
   reminderEmail,
   type EmailContext,
   type Rendered,
+  usdc,
 } from "../../email/messages.ts";
+import type { Push } from "../push.ts";
 import { nameOf, toUsdc, type PersonRow } from "./common.ts";
 import type { AppPoolRow } from "./pool-views.ts";
 
@@ -30,6 +32,8 @@ export class Notifications {
     private readonly db: Db,
     private readonly mail: Mailer,
     private readonly defaults: { appUrl: string | null; timeZone: string },
+    /** Device notifications, sent alongside the emails. */
+    private readonly push?: Push,
   ) {}
 
   /** The payer's receipt, and the lifeguard's "goal met" if this payment reached it. */
@@ -56,6 +60,22 @@ export class Notifications {
         }, ctx)),
       );
     }
+    // The lifeguard's devices hear about each payment (one notification per pool, replaced as more come in).
+    if (p.payerId !== row.admin_user_id) {
+      await this.push?.toUsers([row.admin_user_id], {
+        title: `${row.emoji} ${row.name}`,
+        body: `${p.diverName} paid ${usdc(toUsdc(p.amount))}.`,
+        url: `/pools/${row.id}`,
+        tag: `payments-${row.id}`,
+      });
+    }
+    if (p.goalReachedWith !== null) {
+      await this.push?.toUsers([row.admin_user_id], {
+        title: `🎉 ${row.name} is full`,
+        body: `${usdc(toUsdc(p.goalReachedWith))} is in. Request the payout when you're ready.`,
+        url: `/pools/${row.id}/payout`,
+      });
+    }
     if (p.goalReachedWith !== null && lifeguard?.email) {
       const approvers = await this.approverIds(row.id);
       emails.push(
@@ -71,6 +91,11 @@ export class Notifications {
     const ids = await this.approverIds(row.id);
     const people = await this.people([row.admin_user_id, ...ids]);
     const lifeguardName = nameOf(people.get(row.admin_user_id));
+    await this.push?.toUsers(ids, {
+      title: "🔑 Your approval is needed",
+      body: `${lifeguardName} asked to pay out ${usdc(toUsdc(p.gross))} from ${row.name}.`,
+      url: `/pools/${row.id}/approve`,
+    });
     const emails = ids.flatMap((id) => {
       const approver = people.get(id);
       if (!approver?.email) return [];
@@ -88,7 +113,30 @@ export class Notifications {
     await this.mail.send(emails);
   }
 
+  /** An approver agreed but more approvals are still needed: the lifeguard sees progress. */
+  async approvalGiven(row: AppPoolRow, p: { approverName: string; approvals: number; needed: number }) {
+    await this.push?.toUsers([row.admin_user_id], {
+      title: `✅ ${p.approverName} approved`,
+      body: `${p.approvals} of ${p.needed} approvals for the ${row.name} payout.`,
+      url: `/pools/${row.id}/payout/status`,
+      tag: `approvals-${row.id}`,
+    });
+  }
+
   async paidOut(row: AppPoolRow, p: { gross: bigint; net: bigint; reference: string }, appUrl: string | null) {
+    const payers = await this.db.query<{ user_id: string }>(
+      "select distinct user_id from contributions where pool_id = $1 and user_id <> $2",
+      [row.id, row.admin_user_id],
+    );
+    await this.push?.toUsers([row.admin_user_id], {
+      title: "💸 Your payout landed",
+      body: `${usdc(toUsdc(p.net))} from ${row.name} is in your PoolFi balance.`,
+      url: `/pools/${row.id}/record`,
+    });
+    await this.push?.toUsers(
+      payers.map((x) => x.user_id),
+      { title: `${row.emoji} ${row.name} was paid out`, body: "The pool reached its goal and the lifeguard has been paid.", url: `/pools/${row.id}` },
+    );
     const lifeguard = (await this.people([row.admin_user_id])).get(row.admin_user_id);
     if (!lifeguard?.email) return;
     await this.mail.send([
@@ -104,6 +152,11 @@ export class Notifications {
   }
 
   async declined(row: AppPoolRow, p: { requestId: string; approverName: string; reason: string }, appUrl: string | null) {
+    await this.push?.toUsers([row.admin_user_id], {
+      title: "✋ Payout declined",
+      body: `${p.approverName}: "${p.reason}". The money stays in ${row.name}.`,
+      url: `/pools/${row.id}`,
+    });
     const lifeguard = (await this.people([row.admin_user_id])).get(row.admin_user_id);
     if (!lifeguard?.email) return;
     await this.mail.send([
@@ -128,6 +181,15 @@ export class Notifications {
     const muted = new Set(off.map((o) => o.email));
     const recipients = allRecipients.filter((r) => !muted.has(r.email.toLowerCase()));
     if (recipients.length === 0) return 0;
+    // People on the list who have a PoolFi account (with reminders on) also get it on their devices.
+    const accounts = await this.db.query<{ id: string }>(
+      "select id from users where lower(email) = any($1::text[]) and reminders_on",
+      [recipients.map((r) => r.email.toLowerCase())],
+    );
+    await this.push?.toUsers(
+      accounts.map((a) => a.id),
+      { title: `👋 ${row.emoji} ${row.name}`, body: `Your ${usdc(toUsdc(row.share_amount))} share is waiting. Tap to pay.`, url: `/p/${row.code}` },
+    );
     const ctx = this.context(appUrl);
     const lifeguardName = nameOf((await this.people([row.admin_user_id])).get(row.admin_user_id));
     // One a day per person at most, even if the lifeguard taps Remind again.
@@ -154,6 +216,13 @@ export class Notifications {
     const [pool] = await this.db.query<{ name: string }>("select name from pools where id = $1", [poolId]);
     if (!pool) return;
     const people = await this.people(refunds.map((r) => r.userId));
+    for (const r of refunds) {
+      await this.push?.toUsers([r.userId], {
+        title: "↩️ You've been refunded",
+        body: `${usdc(toUsdc(r.amount))} from ${pool.name} is back in your PoolFi balance.`,
+        url: "/wallet",
+      });
+    }
     const ctx = this.context(null);
     await this.mail.send(
       refunds.flatMap((r) => {

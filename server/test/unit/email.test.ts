@@ -81,3 +81,33 @@ describe("messages", () => {
     expect(r.text).not.toContain("Pay your share:");
   });
 });
+
+describe("Push", () => {
+  it("drops devices the push service says are gone, and never throws", async () => {
+    const { Push } = await import("../../src/services/push.ts");
+    const queries: string[] = [];
+    const db = {
+      query: async (sql: string) => {
+        queries.push(sql.split(" ")[0] ?? "");
+        return sql.startsWith("select")
+          ? [
+              { id: "a", endpoint: "https://push.example.com/a", p256dh: "k", auth: "x" },
+              { id: "b", endpoint: "https://push.example.com/b", p256dh: "k", auth: "x" },
+              { id: "c", endpoint: "https://push.example.com/c", p256dh: "k", auth: "x" },
+            ]
+          : [];
+      },
+    };
+    const send = vi.fn(async (target: { endpoint: string }) => {
+      if (target.endpoint.endsWith("/b")) throw Object.assign(new Error("gone"), { statusCode: 410 });
+      if (target.endpoint.endsWith("/c")) throw Object.assign(new Error("busy"), { statusCode: 503 });
+      return { statusCode: 201 };
+    });
+    const push = new Push(db as never, null, log, send);
+    await expect(push.toUsers(["u1", "u1"], { title: "t", body: "b", url: "/" })).resolves.toBe(1);
+    expect(send).toHaveBeenCalledTimes(3);
+    // One delivered (last-sent update), one forgotten (410), the 503 only logged.
+    expect(queries.filter((q) => q === "delete")).toHaveLength(1);
+    expect(queries.filter((q) => q === "update")).toHaveLength(1);
+  });
+});

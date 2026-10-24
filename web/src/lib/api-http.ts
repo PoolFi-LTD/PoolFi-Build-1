@@ -245,6 +245,14 @@ export const httpApi: PoolFiApi = {
   markNotificationsRead: async () => {
     await post("/notifications/read");
   },
+  getPushKey: async () => (await request<{ publicKey: string | null }>("GET", "/push/key", undefined, false)).publicKey,
+  savePushSubscription: async (subscription) => {
+    await post("/push/subscriptions", subscription);
+  },
+  deletePushSubscription: async (endpoint) => {
+    await post("/push/unsubscribe", { endpoint });
+  },
+  sendTestPush: async () => (await post<{ sent: number }>("/push/test")).sent,
   listContacts: () => get("/contacts"),
 
   getFeeBps: async () => (await request<{ bps: number }>("GET", "/fee", undefined, false)).bps,

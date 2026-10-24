@@ -10,6 +10,7 @@ import { buildApp } from "../../src/app.ts";
 import { loadConfig, type Config } from "../../src/config.ts";
 import { Db } from "../../src/db.ts";
 import type { Email, Mailer } from "../../src/email/mailer.ts";
+import type { PushMessage, PushSender } from "../../src/services/push.ts";
 import { migrate } from "../../src/migrate.ts";
 import { parseUsdc } from "../../src/money.ts";
 import { Chain } from "../../src/stellar/chain.ts";
@@ -55,7 +56,13 @@ export async function startHarness() {
   // Emails are caught here, never sent, whatever server/.env says.
   const emails: Email[] = [];
   const mailer: Mailer = { send: async (batch) => void emails.push(...batch) };
-  const { app, services } = await buildApp({ config, db, chain, mailer });
+  // Device notifications too: caught here by the device address they'd go to.
+  const pushes: { endpoint: string; message: PushMessage }[] = [];
+  const pushSender: PushSender = async (target, payload) => {
+    pushes.push({ endpoint: target.endpoint, message: JSON.parse(payload) as PushMessage });
+    return { statusCode: 201 };
+  };
+  const { app, services } = await buildApp({ config, db, chain, mailer, pushSender });
 
   /**
    * A signed-in user, as Supabase issues them: a session signed in with a password
@@ -98,7 +105,7 @@ export async function startHarness() {
     await adminQuery(base.databaseUrl, `drop database if exists ${database}`);
   }
 
-  return { config, db, chain, app, emails, contract: new PoolContract(chain), services, signIn, call, close };
+  return { config, db, chain, app, emails, pushes, contract: new PoolContract(chain), services, signIn, call, close };
 }
 
 export type Harness = Awaited<ReturnType<typeof startHarness>>;

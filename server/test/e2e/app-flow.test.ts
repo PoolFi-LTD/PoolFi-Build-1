@@ -10,6 +10,8 @@ let h: Harness;
 let bps: number;
 const people: Record<"lifeguard" | "ada" | "tobi" | "zainab" | "dayo" | "emeka" | "stranger", TestUser> = {} as never;
 
+/** What appeared on `key`'s phone so far, as "title | body". */
+const phone = (key: string) => h.pushes.filter((p) => p.endpoint === `https://push.example.com/${key}`).map((p) => `${p.message.title} | ${p.message.body}`);
 /** Subjects of the emails sent to `to` so far. */
 const inbox = (to: string) => h.emails.filter((e) => e.to === to).map((e) => e.subject);
 const inDays = (days: number) => new Date(Date.now() + days * 24 * 3600 * 1000).toISOString();
@@ -31,6 +33,9 @@ beforeAll(async () => {
     const [firstName, lastName] = name.split(" ");
     const saved = await put("/me/profile", user, { firstName, lastName, avatar: { kind: "emoji", emoji: "🌻", bg: "#F4E8D2" } });
     expect(saved.body).toMatchObject({ id: user.id, firstName, lastName, email: `${key}@example.com` });
+    // Each person turns device notifications on (one phone each).
+    const device = { endpoint: `https://push.example.com/${key}`, keys: { p256dh: "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlU", auth: "tBHItJI5svbpez7KI4CCXg" } };
+    expect((await app("POST", "/push/subscriptions", user, device)).status).toBe(201);
   }
 });
 
@@ -340,5 +345,25 @@ describe("a pool with approvers", () => {
 
     const off = await h.app.inject({ method: "PUT", url: "/v1/app/me/preferences", headers: people.dayo.headers, payload: { remindersOn: false } });
     expect(off.json()).toMatchObject({ remindersOn: false });
+  });
+
+  it("puts the important moments on people's phones", async () => {
+    const lifeguard = phone("lifeguard");
+    const share = (shareBase / 1e7).toFixed(2);
+    expect(lifeguard).toContain(`🎓 300L Class Dues | Dayo Okeke paid ${share} USDC.`);
+    expect(lifeguard).toContain(`🎉 300L Class Dues is full | ${((shareBase * 2) / 1e7).toFixed(2)} USDC is in. Request the payout when you're ready.`);
+    expect(lifeguard).toContain('✋ Payout declined | Ada Eze: "Wrong account". The money stays in 300L Class Dues.');
+    expect(lifeguard).toContain("✅ Ada Eze approved | 1 of 2 approvals for the 300L Class Dues payout.");
+    expect(lifeguard.some((n) => n.startsWith("💸 Your payout landed | "))).toBe(true);
+    expect(phone("tobi").filter((n) => n.startsWith("🔑 Your approval is needed | Judith Okafor asked to pay out"))).toHaveLength(2);
+    expect(phone("dayo")).toContain("🎓 300L Class Dues was paid out | The pool reached its goal and the lifeguard has been paid.");
+    expect(phone("stranger")).toEqual([]);
+    // Tapping goes to the right screen.
+    expect(h.pushes.find((p) => p.message.title.startsWith("🔑"))?.message.url).toBe(`/pools/${pool.id}/approve`);
+
+    // A test notification, then turning the phone off.
+    expect((await app("POST", "/push/test", people.stranger)).body).toEqual({ sent: 1 });
+    expect((await app("POST", "/push/unsubscribe", people.stranger, { endpoint: "https://push.example.com/stranger" })).body).toEqual({ subscribed: false });
+    expect((await app("POST", "/push/test", people.stranger)).body).toEqual({ sent: 0 });
   });
 });

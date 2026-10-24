@@ -83,6 +83,17 @@ const get = <T>(path: string) => request<T>("GET", path);
 const auth = <T = unknown>(path: string, body?: unknown, signedIn = true) =>
   request<T>("POST", `/api/v1/auth${path}`, body, signedIn);
 
+/** How a session was signed in ("password", "recovery"…), from its token. */
+function signInMethods(token: string): string[] {
+  try {
+    const part = token.split(".")[1] ?? "";
+    const payload = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/"))) as { amr?: { method?: string }[] };
+    return (payload.amr ?? []).map((m) => String(m.method));
+  } catch {
+    return [];
+  }
+}
+
 interface SignInStatus {
   locked: boolean;
   attemptsLeft: number;
@@ -161,9 +172,17 @@ export const httpApi: PoolFiApi = {
     if (error) throw authError(error);
   },
 
+  async recoveryReady() {
+    // Supabase sends people back with #error_code=… when a link has expired or was used.
+    if (typeof window !== "undefined" && /(^|[#&])error(_code)?=/.test(window.location.hash)) return false;
+    const token = await accessToken();
+    return token ? signInMethods(token).includes("recovery") : false;
+  },
+
   async setNewPassword(password) {
-    if (!(await accessToken())) {
-      throw new ApiError("reset_link_expired", "This reset link has expired or was already used. Ask for a new one.");
+    // Only the session the reset link opened may change the password, not a sign-in left over in this browser.
+    if (!(await httpApi.recoveryReady())) {
+      throw new ApiError("reset_link_expired", "This page needs the link from your reset email, and that link works once. Ask for a new one.");
     }
     const { error } = await supabase().auth.updateUser({ password });
     if (error) throw authError(error);

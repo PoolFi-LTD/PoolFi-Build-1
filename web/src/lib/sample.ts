@@ -600,6 +600,8 @@ export const sampleApi: PoolFiApi = {
       load().resetFor = email.trim().toLowerCase();
     }, 500),
 
+  recoveryReady: () => respond(() => Boolean(load().resetFor), 100),
+
   setNewPassword: (password) =>
     respond(() => {
       const s = load();

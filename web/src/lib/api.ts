@@ -38,6 +38,8 @@ export interface PoolFiApi {
   resendUnlockCode(email: string): Promise<void>;
   /** Emails a link to choose a new password: the only sign-in link PoolFi sends. */
   requestPasswordReset(email: string): Promise<void>;
+  /** Whether this page was opened from a reset link that still works. */
+  recoveryReady(): Promise<boolean>;
   /** On the page that link opens: sets the new password. Then everyone signs in again. */
   setNewPassword(password: string): Promise<void>;
   saveProfile(profile: { firstName: string; lastName: string; avatar: Avatar }): Promise<User>;

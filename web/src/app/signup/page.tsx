@@ -106,9 +106,18 @@ function SignUp() {
             Your account is unlocked. Sign in again.
           </p>
         )}
-        <ErrorText error={go.error} />
+        {exists ? (
+          <p className="field-error" role="alert" style={{ marginTop: 10 }}>
+            This email already has a PoolFi account.{" "}
+            <Link className={s.link} href={switchMode}>
+              Try signing in instead
+            </Link>
+          </p>
+        ) : (
+          <ErrorText error={go.error} />
+        )}
         <p style={{ marginTop: 14, fontSize: 14 }}>
-          {login ? "New to PoolFi? " : exists ? "" : "Already have an account? "}
+          {login ? "New to PoolFi? " : "Already have an account? "}
           <Link className={s.link} href={switchMode}>
             {login ? "Create an account" : "Sign in"}
           </Link>

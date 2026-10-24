@@ -237,7 +237,7 @@
 .cele-s { max-width: 34ch; margin-top: 6px; font-size: 14px; opacity: 0.85; }
 .cele-pills { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 16px; }
 .cele-pill { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); font-family: var(--font-display); font-weight: 600; font-size: 13.5px; animation: sayIn 600ms var(--ease-splash) both; }
-.cele-foot { display: grid; gap: 10px; width: min(440px, 100%); margin: 0 auto; padding: 12px 20px 150px; }
+.cele-foot { position: relative; z-index: 1; display: grid; gap: 10px; width: min(440px, 100%); margin: 0 auto; padding: 12px 20px 150px; }
 .cele-foot .btn { width: 100%; }
 .cele-foot .btn-ghost { height: 52px; color: var(--white); }
 

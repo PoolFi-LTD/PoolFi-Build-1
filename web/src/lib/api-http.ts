@@ -62,7 +62,7 @@ function rememberedRecovery(): string | null {
 function authError(error: { message: string; code?: string; status?: number }): ApiError {
   const code = error.code ?? "";
   if (code === "user_already_exists" || /already registered/i.test(error.message)) {
-    return new ApiError("account_exists", "There's already an account with this email. Sign in instead.");
+    return new ApiError("account_exists", "This email already has a PoolFi account. Try signing in instead.");
   }
   if (code === "weak_password") {
     return new ApiError("weak_password", "Choose a stronger password: at least 8 characters, not one that's easy to guess.");
@@ -166,6 +166,10 @@ export const httpApi: PoolFiApi = {
   async signUp(email, password) {
     const { data, error } = await supabase().auth.signUp({ email: email.trim().toLowerCase(), password });
     if (error) throw authError(error);
+    // With email confirmation on, Supabase hides a taken email behind a stand-in user with no sign-in methods.
+    if (data.user && data.user.identities?.length === 0) {
+      throw new ApiError("account_exists", "This email already has a PoolFi account. Try signing in instead.");
+    }
     if (!data.session) {
       // Supabase's own email confirmation is on; PoolFi confirms the address with its code instead.
       throw new ApiError("signup_unavailable", "Sign-up isn't open yet: Supabase's \"Confirm email\" setting must be off.");

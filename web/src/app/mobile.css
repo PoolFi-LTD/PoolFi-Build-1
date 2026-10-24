@@ -59,7 +59,8 @@
   .cele-body { justify-content: center; padding: 60px 24px 10px; }
   .cele .say { font-size: 44px; }
   .cele-v { font-size: 44px; }
-  .cele-foot { padding: 12px 20px calc(30px + env(safe-area-inset-bottom, 0px)); }
+  /* Room under the buttons for the 120px waves, so "Look around first" isn't drawn over them. */
+  .cele-foot { padding: 12px 20px calc(132px + env(safe-area-inset-bottom, 0px)); }
   .ach { width: 100%; }
 
   /* "You're in!" fits a phone: smaller headline, lines that wrap */

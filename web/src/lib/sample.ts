@@ -548,7 +548,7 @@ export const sampleApi: PoolFiApi = {
       const s = load();
       const value = email.trim().toLowerCase();
       if (Object.values(s.users).some((u) => u.email === value)) {
-        throw new ApiError("account_exists", "There's already an account with this email. Sign in instead.");
+        throw new ApiError("account_exists", "This email already has a PoolFi account. Try signing in instead.");
       }
       const id = `user${s.nextId++}`;
       s.users[id] = { ...user(id, "", ""), email: value, phone: null };

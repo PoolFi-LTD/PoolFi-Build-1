@@ -1,7 +1,8 @@
 import { getRuntime } from "@server/runtime";
 
-// Refunds contributors of pools that missed their goal. Vercel's scheduled job calls it
-// (see vercel.json), and so can any scheduler that sends the secret, e.g. GitHub Actions.
+// Tells lifeguards when their pool misses its deadline, and refunds the pools they chose
+// to refund. Vercel's scheduled job calls it (see vercel.json), and so can any scheduler
+// that sends the secret, e.g. GitHub Actions.
 export const maxDuration = 300;
 
 export async function GET(request: Request) {

@@ -1,7 +1,7 @@
 /**
  * Escrow on Stellar testnet, through the API: the pool admin withdraws once the
- * goal is met, and contributors are refunded automatically when the deadline
- * passes below the goal.
+ * goal is met. When the deadline passes below the goal, nothing is refunded
+ * until the pool admin chooses to; then every contributor is refunded once.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { formatUsdc, parseUsdc } from "../../src/money.ts";
@@ -66,8 +66,8 @@ describe("withdrawal", () => {
   });
 });
 
-describe("automatic refunds", () => {
-  it("refunds every contributor exactly once when the deadline passes below the goal", async () => {
+describe("refunds", () => {
+  it("refunds every contributor exactly once, after the pool admin chooses to, when the deadline passes below the goal", async () => {
     const admin = await h.signIn("organiser");
     const alice = await h.signIn("alice");
     const bob = await h.signIn("bob");
@@ -96,14 +96,23 @@ describe("automatic refunds", () => {
     expect(await h.services.refunds.runOnce()).toMatchObject({ poolsChecked: 0, refunds: 0 });
 
     // Wait for the ledger clock to pass the deadline.
-    for (let i = 0; (await h.contract.getPool(chainPoolId)).status !== "refunded"; i++) {
+    for (let i = 0; (await h.contract.getPool(chainPoolId)).status !== "expired"; i++) {
       if (i > 40) throw new Error("the pool never expired on-chain");
       await new Promise((resolve) => setTimeout(resolve, 5_000));
     }
-    expect((await h.call("POST", `/v1/pools/${poolId}/withdraw`, admin)).body.error.code).toBe("pool_refunded");
+    expect((await h.call("POST", `/v1/pools/${poolId}/withdraw`, admin)).body.error.code).toBe("goal_not_reached");
 
-    const run = await h.services.refunds.runOnce();
-    expect(run).toEqual({ poolsChecked: 1, refunds: 2, failures: 0, poolsFinished: 1 });
+    // The job asks the pool admin and refunds nobody by itself, nor asks twice.
+    expect(await h.services.refunds.runOnce()).toEqual({ poolsChecked: 1, lifeguardsAsked: 1, refunds: 0, failures: 0, poolsFinished: 0 });
+    expect(await balance(alice)).toBe("1");
+    expect(h.emails.filter((e) => e.to === "organiser@example.com").map((e) => e.subject)).toEqual(["Community borehole missed its deadline"]);
+    expect(await h.services.refunds.runOnce()).toMatchObject({ poolsChecked: 0, lifeguardsAsked: 0, refunds: 0 });
+    // Only the pool admin decides: a contributor can't trigger refunds.
+    expect((await h.call("POST", `/v1/app/pools/${poolId}/refund`, alice)).status).toBe(403);
+
+    const refunded = await h.call("POST", `/v1/app/pools/${poolId}/refund`, admin);
+    expect(refunded.status).toBe(200);
+    expect(refunded.body).toMatchObject({ status: "refunded", totalRefunded: 8 });
     expect(await balance(alice)).toBe("6");
     expect(await balance(bob)).toBe("4");
 

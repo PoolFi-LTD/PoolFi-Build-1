@@ -48,6 +48,7 @@ const STATUS: Record<string, { label: string; tone: string; dot?: boolean }> = {
   met: { label: "Goal met", tone: "pill-green" },
   approval: { label: "Awaiting approval", tone: "pill-navy" },
   paidout: { label: "Paid out", tone: "pill-green" },
+  missed: { label: "Deadline passed", tone: "pill-amber" },
   refunded: { label: "Refunded", tone: "pill-grey" },
   owe: { label: "You owe", tone: "pill-amber" },
   paid: { label: "Paid", tone: "pill-green" },

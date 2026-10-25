@@ -6,7 +6,9 @@
 //! its own admin wallet, goal, deadline and optional approvers. Members join
 //! and contribute USDC into the contract. Once the goal is met the pool admin is
 //! paid out (after a majority of approvers agree, if the pool has any), less the
-//! platform fee; otherwise members claim refunds. See `docs/contract-plan.md`.
+//! platform fee. If the deadline passes first, the pool admin decides: extend the
+//! deadline (as often as they like) or cancel so members claim refunds. See
+//! `docs/contract-plan.md`.
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, token, Address, BytesN,
@@ -34,6 +36,10 @@ pub enum PoolStatus {
     Settled,
     /// Members can claim back what they contributed.
     Refunded,
+    /// The deadline passed before the goal was reached. Never stored: `get_pool`
+    /// reports it for an Open pool past its deadline. The pool admin either
+    /// extends the deadline or cancels the pool; until then nothing moves.
+    Expired,
 }
 
 #[contracttype]
@@ -215,6 +221,15 @@ pub struct FeeChanged {
 pub struct PoolCancelled {
     #[topic]
     pub pool_id: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeadlineExtended {
+    #[topic]
+    pub pool_id: u64,
+    pub old_deadline: u64,
+    pub new_deadline: u64,
 }
 
 #[contractevent]
@@ -482,14 +497,11 @@ impl PoolContract {
         Ok(())
     }
 
-    /// Closes an Open or Funded pool so members can claim refunds.
+    /// Closes an Open, Expired or Funded pool so members can claim refunds.
     pub fn cancel_pool(env: Env, pool_id: u64) -> Result<(), Error> {
         let mut pool = load_pool(&env, pool_id)?;
         pool.admin.require_auth();
-        match effective_status(&env, &pool) {
-            PoolStatus::Open | PoolStatus::Funded => {}
-            PoolStatus::Settled | PoolStatus::Refunded => return Err(Error::PoolClosed),
-        }
+        ensure_not_closed(&env, &pool)?;
 
         pool.status = PoolStatus::Refunded;
         pool.payout_approvals = None;
@@ -498,11 +510,34 @@ impl PoolContract {
         Ok(())
     }
 
-    /// Returns a member's contribution from a Refunded pool. Anyone can call it;
-    /// the funds always go to the member.
+    /// Moves the deadline of an Open, Expired or Funded pool later, so it accepts
+    /// joins and contributions again until then. Only the pool admin can, as
+    /// often as they like; the deadline never moves earlier.
+    pub fn extend_deadline(env: Env, pool_id: u64, new_deadline: u64) -> Result<(), Error> {
+        let mut pool = load_pool(&env, pool_id)?;
+        pool.admin.require_auth();
+        ensure_not_closed(&env, &pool)?;
+        if new_deadline <= env.ledger().timestamp() || new_deadline <= pool.deadline {
+            return Err(Error::InvalidDeadline);
+        }
+
+        let old_deadline = pool.deadline;
+        pool.deadline = new_deadline;
+        save_pool(&env, &pool);
+        DeadlineExtended {
+            pool_id,
+            old_deadline,
+            new_deadline,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// Returns a member's contribution from a Refunded pool (one its admin
+    /// cancelled). Anyone can call it; the funds always go to the member.
     pub fn claim_refund(env: Env, pool_id: u64, member: Address) -> Result<i128, Error> {
         let mut pool = load_pool(&env, pool_id)?;
-        if effective_status(&env, &pool) != PoolStatus::Refunded {
+        if pool.status != PoolStatus::Refunded {
             return Err(Error::NotRefundable);
         }
         let mut record = load_member(&env, pool_id, &member).ok_or(Error::NotMember)?;
@@ -512,7 +547,6 @@ impl PoolContract {
 
         let amount = record.contributed;
         record.refunded = true;
-        pool.status = PoolStatus::Refunded;
         pool.total_refunded += amount;
         save_member(&env, pool_id, &member, &record);
         save_pool(&env, &pool);
@@ -643,7 +677,15 @@ fn needed_approvals(approvers: &Vec<Address>) -> u32 {
 fn ensure_funded(env: &Env, pool: &Pool) -> Result<(), Error> {
     match effective_status(env, pool) {
         PoolStatus::Funded => Ok(()),
-        PoolStatus::Open => Err(Error::GoalNotReached),
+        PoolStatus::Open | PoolStatus::Expired => Err(Error::GoalNotReached),
+        PoolStatus::Settled | PoolStatus::Refunded => Err(Error::PoolClosed),
+    }
+}
+
+/// The pool admin can still extend or cancel: it hasn't paid out or been cancelled.
+fn ensure_not_closed(env: &Env, pool: &Pool) -> Result<(), Error> {
+    match effective_status(env, pool) {
+        PoolStatus::Open | PoolStatus::Expired | PoolStatus::Funded => Ok(()),
         PoolStatus::Settled | PoolStatus::Refunded => Err(Error::PoolClosed),
     }
 }
@@ -683,10 +725,11 @@ fn token_client(env: &Env) -> token::TokenClient<'_> {
     token::TokenClient::new(env, &token)
 }
 
-/// An Open pool past its deadline never reached its goal, so it is refundable.
+/// An Open pool past its deadline never reached its goal: it waits for its admin
+/// to extend the deadline or cancel.
 fn effective_status(env: &Env, pool: &Pool) -> PoolStatus {
     if pool.status == PoolStatus::Open && env.ledger().timestamp() >= pool.deadline {
-        PoolStatus::Refunded
+        PoolStatus::Expired
     } else {
         pool.status
     }
@@ -695,6 +738,7 @@ fn effective_status(env: &Env, pool: &Pool) -> PoolStatus {
 fn ensure_accepting(env: &Env, pool: &Pool) -> Result<(), Error> {
     match pool.status {
         PoolStatus::Settled | PoolStatus::Refunded => Err(Error::PoolClosed),
+        PoolStatus::Expired => Err(Error::DeadlinePassed),
         PoolStatus::Open | PoolStatus::Funded if env.ledger().timestamp() >= pool.deadline => {
             Err(Error::DeadlinePassed)
         }

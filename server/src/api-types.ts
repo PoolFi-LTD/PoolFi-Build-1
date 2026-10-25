@@ -23,10 +23,11 @@ export type Role = "lifeguard" | "diver" | "approver";
 
 /**
  * active: collecting · met: goal reached, payout not requested · approval:
- * payout waiting for approvers · paidout: paid to the lifeguard · refunded:
- * missed the goal (or cancelled), contributors refunded.
+ * payout waiting for approvers · paidout: paid to the lifeguard · missed: the
+ * deadline passed below the goal, waiting for the lifeguard to extend it or
+ * refund · refunded: the lifeguard refunded everyone who paid.
  */
-export type PoolStatus = "active" | "met" | "approval" | "paidout" | "refunded";
+export type PoolStatus = "active" | "met" | "approval" | "paidout" | "missed" | "refunded";
 
 export type PoolType =
   | "Class dues"
@@ -99,7 +100,7 @@ export interface Payout {
 
 export interface ActivityItem {
   id: string;
-  kind: "payment" | "reminder" | "goal_met" | "approval" | "payout" | "refund" | "joined" | "created";
+  kind: "payment" | "reminder" | "goal_met" | "approval" | "payout" | "refund" | "joined" | "created" | "missed" | "extended";
   title: string;
   at: string;
   amount: Usdc | null;
@@ -182,6 +183,8 @@ export interface HomeSummary {
 
 export type HomeAlert =
   | { kind: "goal_met"; poolId: string; poolName: string }
+  /** The lifeguard's pool missed its deadline: extend it or refund the divers. */
+  | { kind: "goal_missed"; poolId: string; poolName: string }
   | { kind: "approval_needed"; poolId: string; poolName: string; requester: string };
 
 export interface Transaction {
@@ -277,6 +280,11 @@ export interface CreatePoolInput {
   diversCanShare: boolean;
   /** Divers see each other's payments; off unless the lifeguard turns it on. */
   diversSeePayments: boolean;
+}
+
+/** The lifeguard's new deadline for a pool that missed (or is about to miss) its goal. */
+export interface ExtendDeadlineInput {
+  deadline: string;
 }
 
 export interface PaymentResult {

@@ -278,6 +278,8 @@ export const httpApi: PoolFiApi = {
   updatePoolSettings: (id, settings) => request("PATCH", `${pool(id)}/settings`, settings),
   remindUnpaid: (id) => post(`${pool(id)}/reminders`),
   getRecord: (id) => get(`${pool(id)}/record`),
+  extendDeadline: (id, deadline) => post(`${pool(id)}/extend`, { deadline }),
+  refundDivers: (id) => post(`${pool(id)}/refund`),
 
   getInvite: (code) => request("GET", `/invites/${encodeURIComponent(code)}`, undefined, false),
   payShare: (code, as) => post(`/invites/${encodeURIComponent(code)}/pay`, as),

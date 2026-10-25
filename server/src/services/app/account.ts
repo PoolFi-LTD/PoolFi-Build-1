@@ -24,7 +24,7 @@ import type { PoolViews } from "./pool-views.ts";
 
 /** A 256px photo from the profile screen is ~30 KB; this leaves room without letting rows balloon. */
 const MAX_PHOTO_CHARS = 300_000;
-const OPEN = new Set(["active", "met", "approval"]);
+const OPEN = new Set(["active", "met", "approval", "missed"]);
 
 const AvatarInput = z.discriminatedUnion("kind", [
   z.object({
@@ -132,6 +132,9 @@ export class Account {
 
     const alerts: HomeAlert[] = [
       ...leading
+        .filter((b) => b.summary.status === "missed")
+        .map((b) => ({ kind: "goal_missed" as const, poolId: b.row.id, poolName: b.row.name })),
+      ...leading
         .filter((b) => b.summary.status === "met")
         .map((b) => ({ kind: "goal_met" as const, poolId: b.row.id, poolName: b.row.name })),
       ...open
@@ -211,7 +214,7 @@ export class Account {
             `select a.id, a.pool_id, a.kind, a.actor_name, a.amount, a.data, a.at, p.name as pool_name, p.admin_user_id, p.deadline
              from activity a join pools p on p.id = a.pool_id
              where a.pool_id = any($1::uuid[]) and a.actor_user_id is distinct from $2
-               and a.kind in ('payment', 'goal_met', 'approval', 'payout', 'refund', 'reminder')
+               and a.kind in ('payment', 'goal_met', 'approval', 'payout', 'refund', 'reminder', 'missed', 'extended')
                and not (a.kind = 'payment' and a.pool_id = any($3::uuid[]))
              order by a.at desc limit 60`,
             [ids, user.id, hidden],
@@ -283,6 +286,20 @@ export class Account {
             at,
             href: lifeguard ? pool : "/wallet",
           });
+          break;
+        case "missed":
+          // The lifeguard decides what happens next; everyone else waits for that.
+          if (!lifeguard) break;
+          items.push({
+            id: e.id,
+            icon: "⏰",
+            title: `${e.pool_name} reached its deadline with${amount} in, short of its goal. Extend the date or refund the divers.`,
+            at,
+            href: pool,
+          });
+          break;
+        case "extended":
+          items.push({ id: e.id, icon: "📅", title: `${e.actor_name ?? "The lifeguard"} gave ${e.pool_name} more time.`, at, href: pool });
           break;
         case "reminder":
           // Reminders matter to people in the pool who haven't paid yet.

@@ -165,6 +165,33 @@ fn stranger_cannot_cancel_a_pool() {
 }
 
 #[test]
+fn only_the_pool_admin_decides_on_an_expired_pool() {
+    let s = Setup::new();
+    let admin = s.wallet(0);
+    let (pool_id, member) = s.pool_with_contribution(&admin, 100 * USDC, 10 * USDC);
+    let pool = s.pool.address.clone();
+    s.pass_deadline();
+    let later = s.deadline() + DAY;
+
+    // Neither a contributor nor the contract admin can extend or cancel someone's pool.
+    for signer in [&member, &s.contract_admin] {
+        s.only_signed_by(
+            signer,
+            &pool,
+            "extend_deadline",
+            (pool_id, later).into_val(&s.env),
+        );
+        assert!(s.pool.try_extend_deadline(&pool_id, &later).is_err());
+        s.only_signed_by(signer, &pool, "cancel_pool", (pool_id,).into_val(&s.env));
+        assert!(s.pool.try_cancel_pool(&pool_id).is_err());
+    }
+    let state = s.pool.get_pool(&pool_id);
+    assert_eq!(state.status, PoolStatus::Expired);
+    assert_eq!(state.deadline, s.deadline());
+    assert_eq!(s.usdc.balance(&pool), 10 * USDC);
+}
+
+#[test]
 fn refunds_only_ever_go_to_the_member() {
     let s = Setup::new();
     let admin = s.wallet(0);
@@ -302,6 +329,7 @@ fn every_contributor_is_refunded_exactly_once() {
         .collect();
     let unrelated = s.hold_unrelated_funds();
     s.pass_deadline();
+    s.pool.cancel_pool(&pool_id);
 
     for (member, amount) in members.iter().zip(amounts) {
         assert_eq!(s.pool.claim_refund(&pool_id, member), amount);
@@ -404,7 +432,7 @@ fn settle_needs_the_goal_reached() {
 
     assert_eq!(s.pool.try_settle(&pool_id), Err(Ok(Error::GoalNotReached)));
     s.pass_deadline();
-    assert_eq!(s.pool.try_settle(&pool_id), Err(Ok(Error::PoolClosed)));
+    assert_eq!(s.pool.try_settle(&pool_id), Err(Ok(Error::GoalNotReached)));
     assert_eq!(s.usdc.balance(&s.pool.address), 99 * USDC);
 }
 
@@ -458,7 +486,9 @@ fn closed_pools_cannot_be_cancelled_again() {
         s.pool.try_cancel_pool(&cancelled),
         Err(Ok(Error::PoolClosed))
     );
+    // A pool that missed its deadline is cancelled once, by its admin's choice.
     s.pass_deadline();
+    s.pool.cancel_pool(&expired);
     assert_eq!(s.pool.try_cancel_pool(&expired), Err(Ok(Error::PoolClosed)));
 }
 

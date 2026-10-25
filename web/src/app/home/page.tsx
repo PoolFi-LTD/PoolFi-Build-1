@@ -106,7 +106,13 @@ function Home({ user }: { user: User }) {
             {h.alerts.length > 0 && (
               <div className={s.alerts}>
                 {h.alerts.map((a) =>
-                  a.kind === "goal_met" ? (
+                  a.kind === "goal_missed" ? (
+                    <Link key={`x-${a.poolId}`} href={`/pools/${a.poolId}`} className="banner banner-amber attn">
+                      <span aria-hidden="true">⏰</span>
+                      <strong>{a.poolName} missed its deadline.</strong>
+                      <span className="banner-rest">Extend it or refund the divers</span>
+                    </Link>
+                  ) : a.kind === "goal_met" ? (
                     <Link key={`m-${a.poolId}`} href={`/pools/${a.poolId}/payout`} className="banner banner-green attn">
                       <span aria-hidden="true">🎉</span>
                       <strong>{a.poolName} is full.</strong>

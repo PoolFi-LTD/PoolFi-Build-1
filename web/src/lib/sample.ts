@@ -27,7 +27,7 @@ import type {
   User,
 } from "./types";
 
-const STORAGE_KEY = "poolfi-sample-v2";
+const STORAGE_KEY = "poolfi-sample-v3";
 /** The password of every seeded sample account. */
 export const SAMPLE_PASSWORD = "poolfi123";
 const MAX_TRIES = 5;
@@ -192,6 +192,8 @@ function seed(): SampleState {
   const fuelDivers = divers(now - 13 * DAY, "PF-FU17", fuel, 20, 9, ["Judith Okafor", "Tayo Adeyemi"]);
   fuelDivers[0] = { ...fuelDivers[0], userId: "judith" };
   fuelDivers[1] = { ...fuelDivers[1], userId: "tayo" };
+  const coats = fromNaira(6000);
+  const coatsDivers = divers(now - 2 * DAY, "PF-LC32", coats, 25, 16, ["Ada Eze", "Tobi Bello"]);
 
   const pools: SamplePool[] = [
     {
@@ -244,7 +246,14 @@ function seed(): SampleState {
     {
       id: "fuel", code: "PF-FU17", emoji: "⛽", name: "Hostel generator fuel", type: "Something else", description: null,
       lifeguardId: "musa", amount: fuel, feeCovered: false, expectedCount: 20, deadline: now - 13 * DAY, createdAt: now - 20 * DAY,
-      approverIds: [], payout: null, cancelled: false, divers: fuelDivers, activity: [],
+      approverIds: [], payout: null, cancelled: true, divers: fuelDivers, activity: [],
+      pickYourName: true, allowNotOnList: true, diversCanShare: true,
+    },
+    {
+      id: "coats", code: "PF-LC32", emoji: "🥼", name: "Lab coats for 300L", type: "Class dues", description: null,
+      lifeguardId: "judith", amount: coats, feeCovered: false, expectedCount: 25, deadline: now - 2 * HOUR, createdAt: now - 12 * DAY,
+      approverIds: [], payout: null, cancelled: false, divers: coatsDivers,
+      activity: [activity("coats", "missed", "Lab coats for 300L reached its deadline before its goal", now - 2 * HOUR, roundUsdc(coats * 16))],
       pickYourName: true, allowNotOnList: true, diversCanShare: true,
     },
   ];
@@ -366,12 +375,13 @@ function statusOf(p: SamplePool, now: number): PoolStatus {
   if (p.payout?.paidAt) return "paidout";
   if (p.cancelled) return "refunded";
   const met = raisedOf(p) >= goalOf(p);
-  if (!met && now >= p.deadline) return "refunded";
+  // Missed: nothing is refunded until the lifeguard extends the deadline or refunds.
+  if (!met && now >= p.deadline) return "missed";
   if (p.payout && !p.payout.declinedBy) return "approval";
   return met ? "met" : "active";
 }
 
-/** Refunds everyone in a pool that missed its goal, as the backend's refund job does. */
+/** Refunds everyone in a pool its lifeguard chose to refund, as the backend's refund job does. */
 function refundIfNeeded(s: SampleState, p: SamplePool, now: number) {
   if (statusOf(p, now) !== "refunded") return;
   for (const d of p.divers) {
@@ -637,11 +647,12 @@ export const sampleApi: PoolFiApi = {
       const u = me(s);
       const pools = visiblePools(s, u.id);
       const summaries = pools.map((p) => summary(s, p, u.id));
-      const open = summaries.filter((p) => ["active", "met", "approval"].includes(p.status));
+      const open = summaries.filter((p) => ["active", "met", "approval", "missed"].includes(p.status));
       const lockedPools = open.filter((p) => p.role === "diver" && p.youPaid);
       const locked = roundUsdc(lockedPools.reduce((sum, p) => sum + p.share, 0));
       const leading = open.filter((p) => p.role === "lifeguard");
       const alerts: HomeAlert[] = [
+        ...leading.filter((p) => p.status === "missed").map((p) => ({ kind: "goal_missed" as const, poolId: p.id, poolName: p.name })),
         ...leading.filter((p) => p.status === "met").map((p) => ({ kind: "goal_met" as const, poolId: p.id, poolName: p.name })),
         ...pools
           .filter((p) => roleOf(p, u.id) === "approver" && statusOf(p, Date.now()) === "approval")
@@ -658,7 +669,7 @@ export const sampleApi: PoolFiApi = {
         contributionsIn: leading.reduce((n, p) => n + p.paidCount, 0),
         contributionsExpected: leading.reduce((n, p) => n + p.expectedCount, 0),
         alerts,
-        pools: summaries.filter((p) => p.role === "lifeguard" && ["active", "met", "approval"].includes(p.status)),
+        pools: summaries.filter((p) => p.role === "lifeguard" && ["active", "met", "approval", "missed"].includes(p.status)),
         activity: activityItems.slice(0, 4),
       };
     }),
@@ -703,10 +714,12 @@ export const sampleApi: PoolFiApi = {
         .flatMap((p) =>
           p.activity
             .filter((a) => a.actorName !== fullName(u) && a.kind !== "created")
+            // Only the lifeguard is asked what happens after a missed deadline.
+            .filter((a) => a.kind !== "missed" || p.lifeguardId === u.id)
             .filter((a) => a.kind !== "payment" || p.diversSeePayments || roleOf(p, u.id) !== "diver")
             .map((a) => ({
               id: a.id,
-              icon: { payment: "🌊", goal_met: "🎉", approval: "🔑", payout: "💸", refund: "↩️", reminder: "📣", joined: "👋", created: "✨" }[a.kind],
+              icon: { payment: "🌊", goal_met: "🎉", approval: "🔑", payout: "💸", refund: "↩️", reminder: "📣", joined: "👋", created: "✨", missed: "⏰", extended: "📅" }[a.kind],
               title: a.title,
               at: a.at,
               href: `/pools/${p.id}`,
@@ -813,6 +826,40 @@ export const sampleApi: PoolFiApi = {
       return detail(s, p, u.id);
     }),
 
+  extendDeadline: (poolId, deadline) =>
+    respond(() => {
+      const s = load();
+      const u = me(s);
+      const p = findPool(s, poolId);
+      if (p.lifeguardId !== u.id) throw new ApiError("not_pool_admin", "Only the lifeguard can change the deadline.");
+      const status = statusOf(p, Date.now());
+      if (status === "paidout") throw new ApiError("already_paid_out", "This pool has already been paid out.");
+      if (status === "refunded") throw new ApiError("pool_refunded", "This pool's divers have been refunded.");
+      if (status === "met" || status === "approval") throw new ApiError("goal_met", "This pool has reached its goal. Request the payout instead.");
+      const at = new Date(deadline).getTime();
+      if (!(at >= Date.now() + MINUTE)) throw new ApiError("invalid_deadline", "The new deadline must be at least a minute from now.");
+      if (at <= p.deadline) throw new ApiError("invalid_deadline", "Pick a date after the current deadline.");
+      p.deadline = at;
+      p.activity.unshift(activity(p.id, "extended", `You extended the deadline for ${p.name}`, Date.now(), null, fullName(u)));
+      return detail(s, p, u.id);
+    }, 900),
+
+  refundDivers: (poolId) =>
+    respond(() => {
+      const s = load();
+      const u = me(s);
+      const p = findPool(s, poolId);
+      if (p.lifeguardId !== u.id) throw new ApiError("not_pool_admin", "Only the lifeguard can refund the divers.");
+      const now = Date.now();
+      const status = statusOf(p, now);
+      if (status === "active") throw new ApiError("deadline_not_passed", "This pool is still open. You can refund once its deadline passes.");
+      if (status !== "missed") throw new ApiError("pool_closed", "This pool is closed.");
+      p.cancelled = true;
+      refundIfNeeded(s, p, now);
+      p.activity.unshift(activity(p.id, "refund", `${p.name} missed its goal, so everyone who paid got their USDC back`, now, raisedOf(p)));
+      return detail(s, p, u.id);
+    }, 1200),
+
   remindUnpaid: (poolId) =>
     respond(() => {
       const s = load();
@@ -882,6 +929,7 @@ export const sampleApi: PoolFiApi = {
       if (!p) throw new ApiError("pool_not_found", "Pool not found.");
       const status = statusOf(p, Date.now());
       if (status === "refunded" || status === "paidout") throw new ApiError("pool_closed", "This pool is closed.");
+      if (status === "missed") throw new ApiError("deadline_passed", "This pool's deadline has passed. The lifeguard can give it more time.");
       if (status === "approval") throw new ApiError("payout_pending", "Payments are paused while the payout waits for approval.");
       const share = shareOf(p);
       if (u.balance < share) throw new ApiError("insufficient_funds", "Your PoolFi wallet doesn't have enough USDC.");

@@ -5,6 +5,7 @@ import type { Db, Queryable } from "../../db.ts";
 import { ApiError } from "../../errors.ts";
 import type { Chain } from "../../stellar/chain.ts";
 import type { ChainPool, PoolContract } from "../../stellar/pool-contract.ts";
+import type { RefundJob } from "../refunds.ts";
 import type { Wallets } from "../wallets.ts";
 import {
   approvalsNeeded,
@@ -56,6 +57,7 @@ export const CreatePoolInput = z.object({
 });
 
 export const PoolSettingsInput = z.object({ diversSeePayments: z.boolean() });
+export const ExtendDeadlineInput = z.object({ deadline: z.iso.datetime({ offset: true }) });
 
 export const AddDiversInput = z.object({ divers: z.array(NewDiverInput).min(1).max(1000) });
 export const PayoutInput = z.object({ destination: z.enum(["wallet", "bank"]) });
@@ -88,6 +90,8 @@ export class AppPools {
     private readonly wallets: Wallets,
     private readonly views: PoolViews,
     private readonly notify: Notifications,
+    /** Sends refunds as soon as the lifeguard chooses to refund. */
+    private readonly refunds?: RefundJob,
   ) {
     this.contracts = { pool: chain.poolContractId, usdc: chain.usdcContractId };
   }
@@ -401,7 +405,9 @@ export class AppPools {
       throw new ApiError(400, "coming_soon", "Bank payouts are coming soon. Choose your PoolFi wallet for now.");
     }
     const state = await this.views.state(row);
-    if (state.status === "open") throw new ApiError(409, "goal_not_reached", "This pool hasn't reached its goal yet.");
+    if (state.status === "open" || state.status === "expired") {
+      throw new ApiError(409, "goal_not_reached", "This pool hasn't reached its goal yet.");
+    }
     if (state.status === "settled") throw new ApiError(409, "already_paid_out", "This pool has already been paid out.");
     if (state.status === "refunded") {
       throw new ApiError(409, "pool_refunded", "This pool missed its goal, so its USDC goes back to the divers.");
@@ -504,6 +510,74 @@ export class AppPools {
     });
     await this.notify.declined(row, { requestId: request.id, approverName: nameOf(approver), reason }, appUrl);
     return this.views.detail(row, user.id);
+  }
+
+  /**
+   * The lifeguard gives the pool more time: a later deadline, as often as they
+   * like. A pool that missed its deadline takes payments again until the new one.
+   */
+  async extendDeadline(user: AuthUser, poolId: string, input: z.infer<typeof ExtendDeadlineInput>, appUrl: string): Promise<PoolDetail> {
+    const row = await this.lifeguardsPool(user, poolId, "Only the lifeguard can change the deadline.");
+    const deadline = new Date(input.deadline);
+    if (deadline.getTime() < Date.now() + MIN_DEADLINE_LEAD_MS) {
+      throw new ApiError(400, "invalid_deadline", "The new deadline must be at least a minute from now.");
+    }
+    const state = await this.views.state(row);
+    if (state.status === "settled") throw new ApiError(409, "already_paid_out", "This pool has already been paid out.");
+    if (state.status === "refunded") throw new ApiError(409, "pool_refunded", "This pool's divers have been refunded.");
+    if (state.status === "funded") {
+      throw new ApiError(409, "goal_met", "This pool has reached its goal. Request the payout instead.");
+    }
+    if (deadline.getTime() <= state.deadline.getTime()) {
+      throw new ApiError(400, "invalid_deadline", "Pick a date after the current deadline.");
+    }
+    await this.wallets.ensureUser(user);
+    const keypair = await this.wallets.keypair(user.id);
+    const txHash = await this.views.onChain(() => this.contract.extendDeadline(keypair, BigInt(row.chain_pool_id), deadline));
+
+    const lifeguard = (await this.views.people([user.id])).get(user.id);
+    const updated = await this.db.transaction(async (client) => {
+      // A new deadline is a new chance: if it passes too, the lifeguard is asked again.
+      const { rows } = await client.query<AppPoolRow>(
+        "update pools set deadline = $2, missed_notified_at = null, refund_chosen_at = null where id = $1 returning *",
+        [row.id, deadline],
+      );
+      await client.query(
+        "insert into activity (pool_id, kind, actor_user_id, actor_name, data) values ($1, 'extended', $2, $3, $4)",
+        [row.id, user.id, nameOf(lifeguard), JSON.stringify({ deadline: deadline.toISOString(), txHash })],
+      );
+      return rows[0] ?? row;
+    });
+    await this.notify.extended(updated, { lifeguardName: nameOf(lifeguard) }, appUrl);
+    return this.views.detail(updated, user.id);
+  }
+
+  /**
+   * The lifeguard ends a pool that missed its deadline: the contract pool is
+   * cancelled and everyone who paid is refunded straight away (the refund job
+   * finishes any that don't go through now).
+   */
+  async refundDivers(user: AuthUser, poolId: string): Promise<PoolDetail> {
+    const row = await this.lifeguardsPool(user, poolId, "Only the lifeguard can refund the divers.");
+    const state = await this.views.state(row);
+    if (state.status === "open") {
+      throw new ApiError(409, "deadline_not_passed", "This pool is still open. You can refund once its deadline passes.");
+    }
+    if (state.status === "funded") {
+      throw new ApiError(409, "goal_met", "This pool has reached its goal. Request the payout instead.");
+    }
+    if (state.status === "settled") throw new ApiError(409, "already_paid_out", "This pool has already been paid out.");
+
+    // Recorded first, so the refund job picks the pool up even if this request stops part way.
+    await this.db.query("update pools set refund_chosen_at = coalesce(refund_chosen_at, now()) where id = $1", [row.id]);
+    if (state.status === "expired") {
+      await this.wallets.ensureUser(user);
+      const keypair = await this.wallets.keypair(user.id);
+      await this.views.onChain(() => this.contract.cancelPool(keypair, BigInt(row.chain_pool_id)));
+    }
+    // Already cancelled (a retry, or a contract from before the choice existed): send what's left.
+    await this.refunds?.refundNow(row.id, BigInt(row.chain_pool_id));
+    return this.views.detail(await this.views.byId(row.id), user.id);
   }
 
   /** Wallet addresses for approver user ids, in the order given. Approvers need an active wallet. */
@@ -694,8 +768,8 @@ function ensureAcceptingPayments(state: ChainPool) {
   if (state.payoutApprovals) {
     throw new ApiError(409, "payout_pending", "Payments are paused while the payout waits for approval.");
   }
-  if (state.deadline.getTime() <= Date.now()) {
-    throw new ApiError(409, "deadline_passed", "This pool's deadline has passed.");
+  if (state.status === "expired" || state.deadline.getTime() <= Date.now()) {
+    throw new ApiError(409, "deadline_passed", "This pool's deadline has passed. The lifeguard can give it more time.");
   }
 }
 

@@ -3,7 +3,15 @@ import type { AuthUser } from "./auth.ts";
 import type { Config } from "./config.ts";
 import { parse } from "./parse.ts";
 import { DepositInput, PreferencesInput, ProfileInput } from "./services/app/account.ts";
-import { AddDiversInput, CreatePoolInput, DeclineInput, PayInput, PayoutInput, PoolSettingsInput } from "./services/app/pools.ts";
+import {
+  AddDiversInput,
+  CreatePoolInput,
+  DeclineInput,
+  ExtendDeadlineInput,
+  PayInput,
+  PayoutInput,
+  PoolSettingsInput,
+} from "./services/app/pools.ts";
 import type { Services } from "./services/index.ts";
 import { SubscriptionInput, type Push } from "./services/push.ts";
 
@@ -89,6 +97,12 @@ export function appRoutes(
       pools.remindUnpaid(await signedIn(request), request.params.id, appUrl(request)),
     );
     app.get<Params>("/pools/:id/record", async (request) => pools.record(await signedIn(request), request.params.id));
+
+    // A pool that missed its deadline: the lifeguard gives it more time, or refunds everyone who paid.
+    app.post<Params>("/pools/:id/extend", async (request) =>
+      pools.extendDeadline(await signedIn(request), request.params.id, parse(ExtendDeadlineInput, request.body), appUrl(request)),
+    );
+    app.post<Params>("/pools/:id/refund", async (request) => pools.refundDivers(await signedIn(request), request.params.id));
 
     // Payouts
     app.post<Params>("/pools/:id/payout", async (request) =>

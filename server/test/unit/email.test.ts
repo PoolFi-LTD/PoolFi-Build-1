@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { ResendMailer, type Email } from "../../src/email/mailer.ts";
-import { escapeHtml, receiptEmail, reminderEmail, usdc } from "../../src/email/messages.ts";
+import {
+  deadlineExtendedEmail,
+  escapeHtml,
+  goalMissedEmail,
+  receiptEmail,
+  reminderEmail,
+  usdc,
+} from "../../src/email/messages.ts";
 
 const config = { resendApiKey: "re_test", from: "PoolFi <noreply@example.com>", replyTo: null, timeZone: "Africa/Lagos" };
 const log = { info: vi.fn(), warn: vi.fn() };
@@ -70,6 +77,30 @@ describe("messages", () => {
     expect(r.text).toContain("Check it at https://thepoolfi.com/r/PF-R-7K2Q-0001");
     expect(r.text).toContain("Date: 21 Oct 2026, 16:02");
     expect(usdc(2171.3)).toBe("2,171.30 USDC");
+  });
+
+  it("asks the lifeguard to extend or refund when the deadline passes below the goal", () => {
+    const r = goalMissedEmail(
+      { poolName: "Lab coats", poolId: "p1", raised: 96, goal: 150, paidCount: 16, expectedCount: 25, deadline: new Date("2026-10-25T22:59:00Z") },
+      ctx,
+    );
+    expect(r.subject).toBe("Lab coats missed its deadline");
+    expect(r.text).toContain("16 of 25 divers paid");
+    expect(r.text).toContain("Nothing is refunded until you decide");
+    expect(r.text).toContain("Raised: 96.00 USDC");
+    expect(r.text).toContain("Deadline: 25 Oct 2026, 23:59");
+    expect(r.html).toContain('href="https://thepoolfi.com/pools/p1"');
+  });
+
+  it("sends divers who paid to the pool, and the rest to pay, when the deadline moves", () => {
+    const base = { poolName: "Lab coats", poolId: "p1", code: "PF-LC32", lifeguardName: "Judith", deadline: new Date("2026-11-01T22:59:00Z") };
+    const paid = deadlineExtendedEmail({ ...base, paid: true }, ctx);
+    const unpaid = deadlineExtendedEmail({ ...base, paid: false }, ctx);
+    expect(paid.subject).toBe("Lab coats has a new deadline");
+    expect(paid.text).toContain("The new deadline is 1 Nov 2026, 23:59.");
+    expect(paid.html).toContain('href="https://thepoolfi.com/pools/p1"');
+    expect(unpaid.html).toContain('href="https://thepoolfi.com/p/PF-LC32"');
+    expect(unpaid.text).toContain("still time to pay your share");
   });
 
   it("leaves the button out when the app's address isn't known", () => {

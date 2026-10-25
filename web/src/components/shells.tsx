@@ -212,7 +212,7 @@ export function Waves() {
 const STORY: [string, string, string][] = [
   ["Group money.", "Finally fixed.", "Collect class dues, birthday money and office welfare with one link."],
   ["Everyone sees", "the pool fill.", "Who's paid, who hasn't and what's left. No more \"please who hasn't paid?\""],
-  ["Held safely.", "Or sent back.", "Money moves only when your approvers approve. Miss the goal and everyone is refunded."],
+  ["Held safely.", "Or sent back.", "Money moves only when your approvers approve. Miss the goal and the lifeguard extends it or refunds everyone."],
 ];
 
 const COINS: { style: React.CSSProperties; size: number }[] = [

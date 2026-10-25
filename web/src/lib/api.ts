@@ -76,6 +76,10 @@ export interface PoolFiApi {
   /** Marks who was reminded and emails those with an email address; returns the message to share with the rest. */
   remindUnpaid(poolId: string): Promise<{ count: number; emailed: number; message: string }>;
   getRecord(poolId: string): Promise<PoolRecord>;
+  /** The lifeguard gives a pool more time: a later deadline (ISO), as often as they like. */
+  extendDeadline(poolId: string, deadline: string): Promise<PoolDetail>;
+  /** The lifeguard ends a pool that missed its deadline: everyone who paid is refunded now. */
+  refundDivers(poolId: string): Promise<PoolDetail>;
 
   // The invite link (public)
   getInvite(code: string): Promise<InviteView>;

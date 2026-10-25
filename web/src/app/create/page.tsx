@@ -451,7 +451,7 @@ function Create() {
       </div>
       <p className="note" style={{ marginTop: 16 }}>
         <Icon name="refresh" />
-        Automatic refunds are always on. If the goal isn&apos;t met by the deadline, everyone gets their money back.
+        If the goal isn&apos;t met by the deadline, you choose: give the pool more time, or refund everyone who paid.
       </p>
     </>,
     // 6. Approvers

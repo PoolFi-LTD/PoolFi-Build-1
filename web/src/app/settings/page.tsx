@@ -19,7 +19,7 @@ import s from "./settings.module.css";
 
 const FAQS: [string, string][] = [
   ["Is my money safe?", "Contributions are held in the pool's smart contract until the goal is met. Money only moves when the lifeguard requests the payout and, if the pool has approvers, enough of them approve."],
-  ["What if we don't reach the goal?", "When the deadline passes below the goal, everyone who paid gets their money back automatically."],
+  ["What if we don't reach the goal?", "When the deadline passes below the goal, the lifeguard is asked to choose: give the pool more time with a new deadline, or refund everyone who paid. The money stays safely in the pool until they decide."],
   ["What does it cost?", "Joining and paying are free. PoolFi takes a small fee from the payout, shown before anyone pays. The lifeguard can choose to have divers cover it."],
   ["Why do I get a code every time I sign in?", "Your password and a code sent to your email together prove it's really you, so nobody can get into your account with your password alone."],
 ];

@@ -203,7 +203,7 @@ The screens in `web/` use `/v1/app`, shaped as `server/src/api-types.ts` describ
 
 ### Device notifications
 
-PoolFi pushes the moments that matter to people's phones and computers (Web Push), even with the app closed: a payment into your pool, the pool filling up, a payout waiting for your approval, an approval or decline, the payout landing, a reminder, a refund. Settings → Device notifications turns them on per device; the Notifications page offers it too. Android, Windows, macOS and Linux browsers work as they are; on iPhone and iPad (iOS 16.4+) PoolFi must first be added to the Home Screen (Share → Add to Home Screen) and opened from there. The service worker is `web/public/sw.js`; the app manifest is `web/src/app/manifest.ts`.
+PoolFi pushes the moments that matter to people's phones and computers (Web Push), even with the app closed: a payment into your pool, the pool filling up, a payout waiting for your approval, an approval or decline, the payout landing, a reminder, your pool missing its deadline, a new deadline, a refund. Settings → Device notifications turns them on per device; the Notifications page offers it too. Android, Windows, macOS and Linux browsers work as they are; on iPhone and iPad (iOS 16.4+) PoolFi must first be added to the Home Screen (Share → Add to Home Screen) and opened from there. The service worker is `web/public/sw.js`; the app manifest is `web/src/app/manifest.ts`.
 
 ### Sign-in
 
@@ -234,14 +234,20 @@ With `RESEND_API_KEY` set, the server emails people (through Resend) when someth
 | An approver declines | The lifeguard | Who declined, and why |
 | The payout is paid | The lifeguard | What landed, the fee and the reference |
 | The lifeguard taps Remind | People on the list whose contact is an email address | A reminder with the invite link, at most once every 12 hours each |
-| A missed goal is refunded | Each refunded diver | Their money is back |
+| The deadline passes below the goal | The lifeguard | "Missed its deadline", asking them to extend it or refund the divers (once per deadline) |
+| The lifeguard extends the deadline | Everyone else in the pool with an account | The new deadline, with a link to the pool (or to pay, for those who haven't) |
+| The lifeguard refunds | Each refunded diver | Their money is back |
 
 The messages are in `server/src/email/messages.ts`. Sign-in codes are sent by Supabase, through Resend too (see [Supabase](#1-supabase)).
 
 ### Escrow
 
 - **Withdrawal:** only the pool's admin can withdraw, only after the goal is met (which can only happen before the deadline), and only once. The contract enforces all three; the API explains a refusal (`goal_not_reached`, `already_withdrawn`, `pool_refunded`, `not_pool_admin`).
-- **Automatic refunds:** when a pool's deadline passes below its goal, the refund job sends every contributor their USDC back (membership `refunded`). The contract lets anyone send a refund but always pays the contributor, so no one has to sign. The job runs inside the server every `REFUND_JOB_INTERVAL_SECONDS` (default 300), or once with `npm run refunds` from an external scheduler. Only one server runs it at a time, and nobody is refunded twice.
+- **A missed deadline:** when a pool's deadline passes below its goal, nothing is refunded by itself. The contract reports the pool as `expired`: nobody can pay in, withdraw or claim a refund. The refund job tells the pool's lifeguard once (email, device notification, inbox and a Home alert), and they choose on the pool's page:
+  - **Extend the deadline** (`POST /v1/app/pools/:id/extend` with `{ "deadline" }`): the contract's `extend_deadline` moves it later, as many times as they like, and the pool takes payments again. Everyone else in the pool is told. If the new deadline passes too, the lifeguard is asked again.
+  - **Refund the divers** (`POST /v1/app/pools/:id/refund`): the contract's `cancel_pool` closes the pool, and every contributor gets their USDC back straight away (membership `refunded`). The contract lets anyone send a refund but always pays the contributor, so no one else has to sign. Any refund that doesn't go through then is sent by the next job run.
+
+  Divers can't take their money out while they wait for the lifeguard. The job runs inside the server every `REFUND_JOB_INTERVAL_SECONDS` (default 300), or once with `npm run refunds` from an external scheduler. Only one server runs it at a time, and nobody is refunded twice.
 
 ### Running it
 
@@ -265,9 +271,11 @@ npm test                              # unit tests
 npm --workspace server run test:e2e   # the flows and escrow on Stellar testnet through the API (about 7 minutes)
 ```
 
+`missed-deadline.test.ts` waits out a short deadline: the lifeguard is asked (and nobody is refunded), extends it, divers pay again, and when the new deadline passes too the lifeguard refunds everyone.
+
 `app-flow.test.ts` runs the web app's flow: a pool with three approvers and a fee-covering share, the invite link, paying (including a failed payment that frees the name again), reminders, a declined payout, then a majority approval that pays the lifeguard less the fee, and the wallet, record, receipt and contacts that follow.
 
-The end-to-end tests sign in users, create their wallets on testnet, deposit test USDC, create pools, join and contribute, withdraw, and wait out a short deadline to check that contributors are refunded automatically, checking each result on-chain. They run in temporary databases they drop afterwards.
+The end-to-end tests sign in users, create their wallets on testnet, deposit test USDC, create pools, join and contribute, withdraw, and wait out short deadlines to check that nothing is refunded until the lifeguard chooses to, checking each result on-chain. They run in temporary databases they drop afterwards.
 
 
 ## Deploying on Vercel
@@ -320,7 +328,7 @@ Migration `004_lock_tables.sql` closes PoolFi's tables to Supabase's public Data
 
 ### 4. Refunds
 
-Pools that miss their deadline are refunded by `/api/cron/refunds`. Vercel Cron calls it daily (the most the free plan allows, `web/vercel.json`). For refunds within minutes, `.github/workflows/refunds.yml` calls it every 10 minutes once two repository secrets are set (Settings → Secrets and variables → Actions): `POOLFI_URL` (the site, e.g. `https://thepoolfi.com`) and `CRON_SECRET` (the same value as on Vercel).
+`/api/cron/refunds` tells lifeguards when their pool misses its deadline, and sends any refund that didn't go through when the lifeguard chose to refund. Vercel Cron calls it daily (the most the free plan allows, `web/vercel.json`). For lifeguards to hear within minutes, `.github/workflows/refunds.yml` calls it every 10 minutes once two repository secrets are set (Settings → Secrets and variables → Actions): `POOLFI_URL` (the site, e.g. `https://thepoolfi.com`) and `CRON_SECRET` (the same value as on Vercel).
 
 ### 5. Check it
 

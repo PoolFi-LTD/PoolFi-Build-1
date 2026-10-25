@@ -1,7 +1,12 @@
 import { Address, nativeToScVal, scValToNative, xdr, type Keypair } from "@stellar/stellar-sdk";
 import type { Chain } from "./chain.ts";
 
-export type PoolStatus = "open" | "funded" | "settled" | "refunded";
+/**
+ * "expired": the deadline passed below the goal, and the pool admin hasn't yet
+ * extended it or cancelled. Contracts from before that choice existed report
+ * such a pool as "refunded" instead.
+ */
+export type PoolStatus = "open" | "funded" | "settled" | "refunded" | "expired";
 
 /** A pool as the contract reports it. `status` already accounts for an expired deadline. */
 export interface ChainPool {
@@ -141,6 +146,19 @@ export class PoolContract {
     const { hash, returnValue } = await this.chain.invoke(admin, "settle", [u64(chainPoolId)]);
     if (!returnValue) throw new Error(`settle transaction ${hash} returned no amount`);
     return { amount: BigInt(scValToNative(returnValue)), txHash: hash };
+  }
+
+  /** The pool admin moves the deadline later; an expired pool takes payments again until then. */
+  async extendDeadline(admin: Keypair, chainPoolId: bigint, deadline: Date): Promise<string> {
+    const deadlineSeconds = BigInt(Math.floor(deadline.getTime() / 1000));
+    const { hash } = await this.chain.invoke(admin, "extend_deadline", [u64(chainPoolId), u64(deadlineSeconds)]);
+    return hash;
+  }
+
+  /** The pool admin closes the pool so everyone who paid can be refunded. */
+  async cancelPool(admin: Keypair, chainPoolId: bigint): Promise<string> {
+    const { hash } = await this.chain.invoke(admin, "cancel_pool", [u64(chainPoolId)]);
+    return hash;
   }
 
   /** Returns `member`'s contribution to them. Anyone can send it; `caller` pays for the transaction. */

@@ -1,6 +1,6 @@
-# Refunds contributors of pools that missed their goal, every 10 minutes. Vercel's free
-# plan only runs its own scheduled job (web/vercel.json) once a day, so this keeps
-# refunds prompt. Needs two repository secrets (Settings → Secrets and variables → Actions):
+# Every 10 minutes: tells lifeguards when their pool misses its deadline, and sends
+# any refund left over after a lifeguard chose to refund. Vercel's free plan only runs
+# its own scheduled job (web/vercel.json) once a day, so this keeps it prompt. Needs two repository secrets (Settings → Secrets and variables → Actions):
 #   POOLFI_URL   the deployed site, e.g. https://poolfi.vercel.app
 #   CRON_SECRET  the same value as the CRON_SECRET environment variable on Vercel
 name: Refunds

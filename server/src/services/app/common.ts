@@ -99,6 +99,8 @@ export function statusOf(state: ChainPool): PoolStatus {
       return state.payoutApprovals ? "approval" : "met";
     case "settled":
       return "paidout";
+    case "expired":
+      return "missed";
     case "refunded":
       return "refunded";
   }

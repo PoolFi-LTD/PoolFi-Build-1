@@ -266,10 +266,61 @@ export function reminderEmail(
       title: `Hi ${p.diverName.split(" ")[0]}, your share is waiting 👋`,
       paragraphs: [
         `${p.lifeguardName} is collecting ${usdc(p.share)} each for ${p.poolEmoji} ${p.poolName} on PoolFi, until ${day(p.deadline, ctx.timeZone)}.`,
-        "If you haven't paid yet, it takes a minute. The money is held safely until the goal is met, and everyone is refunded if it isn't.",
+        "If you haven't paid yet, it takes a minute. The money is held safely until the goal is met. If it isn't met in time, the lifeguard gives the pool more time or refunds everyone.",
       ],
       button: { label: "Pay your share", path: `/p/${encodeURIComponent(p.code)}` },
       footer: `${p.lifeguardName} added you to this pool. If that isn't you, you can ignore this email.`,
+    },
+    ctx,
+  );
+}
+
+/** To the lifeguard, once each time the deadline passes below the goal: they choose what happens next. */
+export function goalMissedEmail(
+  p: { poolName: string; poolId: string; raised: number; goal: number; paidCount: number; expectedCount: number; deadline: Date },
+  ctx: EmailContext,
+): Rendered {
+  return render(
+    {
+      subject: `${p.poolName} missed its deadline`,
+      preview: `${usdc(p.raised)} of ${usdc(p.goal)} came in. Extend the date or refund the divers.`,
+      title: "Your pool's deadline has passed",
+      paragraphs: [
+        `${p.poolName} reached its deadline before its goal. ${p.paidCount} of ${p.expectedCount} divers paid.`,
+        "Nothing is refunded until you decide. Give everyone more time with a new deadline, or refund everyone who paid straight away. Until then, divers can't pay in or take their money out.",
+      ],
+      details: [
+        ["Raised", usdc(p.raised)],
+        ["Goal", usdc(p.goal)],
+        ["Deadline", dateTime(p.deadline, ctx.timeZone)],
+      ],
+      button: { label: "Extend or refund", path: `/pools/${p.poolId}` },
+      footer: `${FOOTER} You're its lifeguard.`,
+    },
+    ctx,
+  );
+}
+
+/** To everyone in the pool when the lifeguard gives it more time. */
+export function deadlineExtendedEmail(
+  p: { poolName: string; poolId: string; code: string; lifeguardName: string; deadline: Date; paid: boolean },
+  ctx: EmailContext,
+): Rendered {
+  return render(
+    {
+      subject: `${p.poolName} has a new deadline`,
+      preview: `${p.lifeguardName} gave the pool until ${day(p.deadline, ctx.timeZone)}.`,
+      title: "The deadline has moved",
+      paragraphs: [
+        `${p.lifeguardName} gave ${p.poolName} more time. The new deadline is ${dateTime(p.deadline, ctx.timeZone)}.`,
+        p.paid
+          ? "Your payment stays safely in the pool. Once the goal is met, the lifeguard is paid out."
+          : "There's still time to pay your share before the new deadline.",
+      ],
+      button: p.paid
+        ? { label: "See the pool", path: `/pools/${p.poolId}` }
+        : { label: "Pay your share", path: `/p/${encodeURIComponent(p.code)}` },
+      footer: FOOTER,
     },
     ctx,
   );
@@ -282,7 +333,7 @@ export function refundEmail(p: { poolName: string; amount: number }, ctx: EmailC
       preview: "The pool missed its goal, so everyone who paid got their money back.",
       title: "You've been refunded",
       paragraphs: [
-        `${p.poolName} didn't reach its goal by the deadline, so everyone who paid got their money back. Your ${usdc(p.amount)} is in your PoolFi balance.`,
+        `${p.poolName} didn't reach its goal, so everyone who paid got their money back. Your ${usdc(p.amount)} is in your PoolFi balance.`,
       ],
       button: { label: "Open your wallet", path: "/wallet" },
       footer: FOOTER,

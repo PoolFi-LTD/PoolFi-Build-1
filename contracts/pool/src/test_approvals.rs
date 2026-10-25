@@ -264,7 +264,7 @@ fn request_payout_needs_a_funded_pool_with_approvers() {
     s.pass_deadline();
     assert_eq!(
         s.pool.try_request_payout(&unfunded),
-        Err(Ok(Error::PoolClosed))
+        Err(Ok(Error::GoalNotReached))
     );
 }
 
@@ -393,6 +393,7 @@ fn refunds_are_never_charged_the_fee() {
     let s = Setup::with_fee(500);
     let (pool_id, member) = s.pool_with_contribution(&s.wallet(0), 100 * USDC, 40 * USDC);
     s.pass_deadline();
+    s.pool.cancel_pool(&pool_id);
 
     assert_eq!(s.pool.claim_refund(&pool_id, &member), 40 * USDC);
     assert_eq!(s.usdc.balance(&member), 40 * USDC);

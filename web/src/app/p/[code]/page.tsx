@@ -235,7 +235,9 @@ function InviteBody({
           <p className={s.closed}>
             {p.status === "refunded"
               ? "This pool closed before reaching its goal, so everyone who paid was refunded."
-              : p.status === "approval"
+              : p.status === "missed"
+                ? `This pool's deadline passed before its goal. Payments are paused until ${firstName} gives it more time or refunds everyone.`
+                : p.status === "approval"
                 ? "This pool reached its goal and its payout is being approved. Payments are paused."
                 : "This pool is closed."}
           </p>
@@ -287,7 +289,7 @@ function InviteBody({
               </div>
               <div className={s.trustRow}>
                 <span className={s.trustIcon}><Icon name="refresh" /></span>
-                Automatic refund if the goal isn&apos;t met by the deadline.
+                If the goal isn&apos;t met in time, {firstName} gives the pool more time or refunds everyone.
               </div>
             </div>
 

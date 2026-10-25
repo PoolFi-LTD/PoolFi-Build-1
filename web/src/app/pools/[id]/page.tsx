@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/Icon";
+import { ExtendModal, RefundModal } from "@/components/missed";
 import { Celebration, dropCoin } from "@/components/motion";
 import { ActivityRow, DiverRow, WaterTank } from "@/components/pool";
 import { useSession, useToast } from "@/components/providers";
@@ -269,6 +270,8 @@ function LifeguardView({ pool, now, reload, onShare }: { pool: PoolDetail; now: 
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("divers");
   const [remind, setRemind] = useState(false);
+  const [extend, setExtend] = useState(false);
+  const [refund, setRefund] = useState(false);
   const unpaid = pool.divers.filter((d) => !d.paid).length;
   const open = pool.status === "active" || pool.status === "met";
   const tank = useRef<HTMLDivElement>(null);
@@ -287,7 +290,17 @@ function LifeguardView({ pool, now, reload, onShare }: { pool: PoolDetail; now: 
           {pool.status === "active" && (
             <p className="note">
               <Icon name="refresh" />
-              If the goal isn&apos;t met by {dayDate(pool.deadline)}, every diver is refunded automatically.
+              If the goal isn&apos;t met by {dayDate(pool.deadline)}, you choose: give the pool more time, or refund every diver who paid.
+            </p>
+          )}
+          {pool.status === "missed" && (
+            <p className="note" style={{ background: "var(--amber-50)", color: "var(--amber-ink)" }}>
+              <Icon name="clock" />
+              <span>
+                <b>The deadline passed on {dayDate(pool.deadline)} before the goal.</b> Nothing is refunded until you decide: give everyone more
+                time with a new deadline, or refund the {pool.paidCount} {pool.paidCount === 1 ? "diver" : "divers"} who paid. Until then, nobody
+                can pay in or take money out.
+              </span>
             </p>
           )}
           {pool.status === "met" && (
@@ -311,7 +324,7 @@ function LifeguardView({ pool, now, reload, onShare }: { pool: PoolDetail; now: 
           {pool.status === "refunded" && (
             <p className="note">
               <Icon name="refresh" />
-              The deadline passed before the goal, so every diver was refunded automatically.
+              The pool didn&apos;t reach its goal, so every diver who paid was refunded.
             </p>
           )}
         </div>
@@ -379,9 +392,21 @@ function LifeguardView({ pool, now, reload, onShare }: { pool: PoolDetail; now: 
             See approvals
           </Link>
         )}
+        {pool.status === "missed" && (
+          <>
+            <button className="btn btn-secondary" onClick={() => setRefund(true)}>
+              Refund divers
+            </button>
+            <button className="btn btn-primary" onClick={() => setExtend(true)}>
+              Extend deadline
+            </button>
+          </>
+        )}
       </div>
 
       <RemindModal open={remind} onClose={() => setRemind(false)} poolId={pool.id} unpaid={unpaid} onReminded={reload} />
+      <ExtendModal open={extend} onClose={() => setExtend(false)} pool={pool} onExtended={reload} />
+      <RefundModal open={refund} onClose={() => setRefund(false)} pool={pool} onRefunded={reload} />
       <FullPool pool={pool} motion={motion} />
     </>
   );
@@ -409,16 +434,20 @@ function DiverView({ pool, now, onShare }: { pool: PoolDetail; now: number; onSh
               </Link>
             )}
           </div>
-        ) : (
+        ) : pool.status !== "missed" ? (
           <Link href={`/p/${pool.code}`} className="btn btn-primary btn-block">
             Pay your share, {formatUsdc(pool.share)}
           </Link>
-        )}
+        ) : null}
         <Tank pool={pool} from={motion.from} tank={tank} />
-        <p className="note">
-          <Icon name="lock" />
-          Held safely until the goal is met. {pool.approvers.length ? `${pool.approvers.length} approvers confirm the payout with ${pool.lifeguard.name.split(" ")[0]}.` : ""}
-        </p>
+        {pool.status === "missed" ? (
+          <MissedNote pool={pool} />
+        ) : (
+          <p className="note">
+            <Icon name="lock" />
+            Held safely until the goal is met. {pool.approvers.length ? `${pool.approvers.length} approvers confirm the payout with ${pool.lifeguard.name.split(" ")[0]}.` : ""}
+          </p>
+        )}
         {pool.status === "active" && (
           <button className="btn btn-secondary hide-m" onClick={onShare}>
             Share link
@@ -460,6 +489,7 @@ function ApproverView({ pool, now }: { pool: PoolDetail; now: number }) {
     <div className={s.layout}>
       <div className={s.left}>
         <Tank pool={pool} from={motion.from} tank={tank} />
+        {pool.status === "missed" && <MissedNote pool={pool} />}
         <p className="note">
           <Icon name="key" />
           {pool.status === "paidout"
@@ -484,6 +514,18 @@ function ApproverView({ pool, now }: { pool: PoolDetail; now: number }) {
   );
 }
 
+/** For everyone but the lifeguard: the deadline passed, and the lifeguard decides what happens. */
+function MissedNote({ pool }: { pool: PoolDetail }) {
+  const first = pool.lifeguard.name.split(" ")[0];
+  return (
+    <p className="note" style={{ background: "var(--amber-50)", color: "var(--amber-ink)" }}>
+      <Icon name="clock" />
+      The deadline passed before the goal. {first} will give the pool more time or refund everyone who paid. Until then, the money stays
+      safely in the pool.
+    </p>
+  );
+}
+
 /** A diver's view of a pool that missed its goal: their money is back. */
 function RefundedView({ pool }: { pool: PoolDetail }) {
   const [bank, setBank] = useState(false);
@@ -499,7 +541,7 @@ function RefundedView({ pool }: { pool: PoolDetail }) {
           </span>
           <div>
             <b>{formatUsdc(pool.yourRefund)} is back in your PoolFi balance</b>
-            <p>The deadline passed before the goal was met, so everyone was refunded automatically. Nobody had to ask.</p>
+            <p>The pool didn&apos;t reach its goal, so {pool.lifeguard.name.split(" ")[0]} refunded everyone who paid.</p>
           </div>
         </div>
       )}

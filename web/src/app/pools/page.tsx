@@ -29,7 +29,7 @@ function MyPools() {
       <Segmented<Show> value={show} onChange={setShow} options={[{ value: "open", label: "Open" }, { value: "closed", label: "Closed" }]} />
       <Loaded resource={pools}>
         {(list) => {
-          const shown = list.filter((p) => (show === "open" ? ["active", "met", "approval"] : ["paidout", "refunded"]).includes(p.status));
+          const shown = list.filter((p) => (show === "open" ? ["active", "met", "approval", "missed"] : ["paidout", "refunded"]).includes(p.status));
           return shown.length ? (
             <div className="grid-cards" style={{ padding: 18, borderRadius: 24, background: "var(--bg)" }}>
               {shown.map((p, i) => (

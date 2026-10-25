@@ -40,6 +40,10 @@ export interface AppPoolRow {
   divers_can_share: boolean;
   /** Divers see each other's payments; otherwise only their own and the totals. */
   divers_see_payments: boolean;
+  /** The lifeguard was told the deadline passed below the goal (migration 008). */
+  missed_notified_at: Date | null;
+  /** The lifeguard chose to refund the divers rather than extend the deadline. */
+  refund_chosen_at: Date | null;
 }
 
 export interface DiverRow {
@@ -87,7 +91,7 @@ interface ActivityRow {
   actor_user_id: string | null;
   actor_name: string | null;
   amount: string | null;
-  data: { count?: number; vote?: "approved" | "declined"; reason?: string };
+  data: { count?: number; vote?: "approved" | "declined"; reason?: string; deadline?: string };
   at: Date;
 }
 
@@ -182,7 +186,16 @@ export class PoolViews {
   }
 
   async state(row: AppPoolRow): Promise<ChainPool> {
-    return this.onChain(() => this.contract.getPool(BigInt(row.chain_pool_id)));
+    const state = await this.onChain(() => this.contract.getPool(BigInt(row.chain_pool_id)));
+    // The lifeguard extended the deadline but saving it here failed: the contract has the real one.
+    if (state.deadline.getTime() > row.deadline.getTime()) {
+      await this.db.query("update pools set deadline = $2, missed_notified_at = null where id = $1 and deadline < $2", [
+        row.id,
+        state.deadline,
+      ]);
+      row.deadline = state.deadline;
+    }
+    return state;
   }
 
   async summaries(rows: AppPoolRow[], viewerId: string | null): Promise<BuiltPool[]> {
@@ -487,6 +500,10 @@ function activityTitle(row: ActivityRow, viewerId: string | null): string {
       return `${pool} paid out to ${you ? "you" : who}`;
     case "refund":
       return `${pool} missed its goal, so everyone who paid got their USDC back`;
+    case "missed":
+      return `${pool} reached its deadline before its goal`;
+    case "extended":
+      return `${who} extended the deadline for ${pool}`;
     case "joined":
       return `${who} joined ${pool}`;
     case "created":

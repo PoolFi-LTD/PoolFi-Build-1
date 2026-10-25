@@ -3,7 +3,8 @@ import type { Notifications } from "./app/notifications.ts";
 import { ApiError } from "../errors.ts";
 import { formatUsdc } from "../money.ts";
 import type { Chain } from "../stellar/chain.ts";
-import type { PoolContract } from "../stellar/pool-contract.ts";
+import type { ChainPool, PoolContract } from "../stellar/pool-contract.ts";
+import type { AppPoolRow } from "./app/pool-views.ts";
 import { toApiError } from "./chain-errors.ts";
 import type { Wallets } from "./wallets.ts";
 
@@ -14,6 +15,8 @@ export interface Logger {
 
 export interface RefundRun {
   poolsChecked: number;
+  /** Lifeguards told this run that their pool missed its deadline. */
+  lifeguardsAsked: number;
   refunds: number;
   failures: number;
   poolsFinished: number;
@@ -21,13 +24,17 @@ export interface RefundRun {
 
 /** How many expired pools one run looks at; the rest wait for the next run. */
 const POOLS_PER_RUN = 100;
+/** How long a lifeguard's "refund now" sends refunds itself before leaving the rest to the next run. */
+const REFUND_NOW_MS = 60_000;
 
 /**
- * Refunds every contributor of every pool whose deadline passed without
- * reaching its goal. The contract allows anyone to send a refund and always
- * pays it to the contributor, so no one has to sign for it. Safe to run
- * repeatedly and from several servers: each refund is sent once, and a
- * contributor already refunded is skipped.
+ * Looks after pools whose deadline passed without reaching the goal. Nothing
+ * is refunded by itself: the lifeguard is told once, then chooses to extend
+ * the deadline or refund the divers. Once they choose to refund (the contract
+ * pool is cancelled), this refunds every contributor. The contract allows
+ * anyone to send a refund and always pays it to the contributor, so no one
+ * has to sign for it. Safe to run repeatedly and from several servers: each
+ * refund is sent once, and a contributor already refunded is skipped.
  */
 export class RefundJob {
   private readonly contracts: { pool: string; usdc: string };
@@ -47,15 +54,18 @@ export class RefundJob {
   /** One pass over expired pools. Returns null if another server is already running it. */
   async runOnce(): Promise<RefundRun | null> {
     return this.db.tryWithLock("poolfi:refund-job", async () => {
-      const pools = await this.db.query<{ id: string; chain_pool_id: string }>(
-        `select id, chain_pool_id from pools
+      // Pools whose lifeguard was already asked wait for them, unless they chose to refund.
+      const pools = await this.db.query<{ id: string; chain_pool_id: string; deadline: Date }>(
+        `select id, chain_pool_id, deadline from pools
          where contract_id = $1 and deadline <= now() and refunds_finished_at is null
+           and (missed_notified_at is null or refund_chosen_at is not null)
          order by deadline limit $2`,
         [this.contracts.pool, POOLS_PER_RUN],
       );
-      const run: RefundRun = { poolsChecked: pools.length, refunds: 0, failures: 0, poolsFinished: 0 };
+      const run: RefundRun = { poolsChecked: pools.length, lifeguardsAsked: 0, refunds: 0, failures: 0, poolsFinished: 0 };
       for (const pool of pools) {
-        const result = await this.refundPool(pool.id, BigInt(pool.chain_pool_id));
+        const result = await this.checkPool(pool.id, BigInt(pool.chain_pool_id), pool.deadline);
+        if (result.asked) run.lifeguardsAsked += 1;
         run.refunds += result.refunds;
         run.failures += result.failures;
         if (result.finished) run.poolsFinished += 1;
@@ -65,22 +75,64 @@ export class RefundJob {
     });
   }
 
-  private async refundPool(poolId: string, chainPoolId: bigint) {
+  /**
+   * Sends the refunds of a pool its lifeguard just chose to refund, for up to a
+   * minute; the next run sends any left over.
+   */
+  async refundNow(poolId: string, chainPoolId: bigint) {
+    const state = await this.contract.getPool(chainPoolId);
+    if (state.status !== "refunded") return { refunds: 0, failures: 0, finished: false };
+    return this.refundPool(poolId, chainPoolId, state, Date.now() + REFUND_NOW_MS);
+  }
+
+  private async checkPool(poolId: string, chainPoolId: bigint, deadline: Date) {
     const state = await this.contract.getPool(chainPoolId);
     // The goal was met: the pool admin withdraws (or already has); nothing to refund.
     if (state.status === "funded" || state.status === "settled") {
       await this.finish(poolId);
-      return { refunds: 0, failures: 0, finished: true };
+      return { asked: false, refunds: 0, failures: 0, finished: true };
     }
-    // Still open: the ledger clock hasn't reached the deadline yet. Try next run.
-    if (state.status !== "refunded") return { refunds: 0, failures: 0, finished: false };
+    // The deadline passed below the goal: the lifeguard decides what happens.
+    if (state.status === "expired") {
+      return { asked: await this.askLifeguard(poolId, state), refunds: 0, failures: 0, finished: false };
+    }
+    if (state.status === "open") {
+      // The lifeguard moved the deadline and this database missed it: catch up.
+      if (state.deadline > deadline) {
+        await this.db.query("update pools set deadline = $2, missed_notified_at = null where id = $1", [poolId, state.deadline]);
+      }
+      // Otherwise the ledger clock hasn't reached the deadline yet. Try next run.
+      return { asked: false, refunds: 0, failures: 0, finished: false };
+    }
+    return { asked: false, ...(await this.refundPool(poolId, chainPoolId, state)) };
+  }
 
+  /** Tells the lifeguard, once per missed deadline, that the pool needs their decision. */
+  private async askLifeguard(poolId: string, state: ChainPool): Promise<boolean> {
+    const [row] = await this.db.query<AppPoolRow>(
+      "update pools set missed_notified_at = now() where id = $1 and missed_notified_at is null returning *",
+      [poolId],
+    );
+    if (!row) return false;
+    await this.db.query("insert into activity (pool_id, kind, amount) values ($1, 'missed', $2)", [
+      poolId,
+      state.totalContributed.toString(),
+    ]);
+    await this.notify?.goalMissed(row, { raised: state.totalContributed, goal: state.goalAmount });
+    this.log.info({ poolId }, "asked the lifeguard to extend or refund");
+    return true;
+  }
+
+  /** Refunds a cancelled pool's contributors; with `stopAt`, starts no new refund after then. */
+  private async refundPool(poolId: string, chainPoolId: bigint, state: ChainPool, stopAt?: number) {
     const members = await this.contract.getMembers(chainPoolId, state.memberCount);
-    const outcomes = await mapConcurrently(members, this.concurrency, (address) =>
-      this.refundMember(poolId, chainPoolId, address),
+    // "later": not started, because `stopAt` came first.
+    const outcomes = await mapConcurrently(members, this.concurrency, async (address) =>
+      stopAt !== undefined && Date.now() > stopAt ? ("later" as const) : this.refundMember(poolId, chainPoolId, address),
     );
     const failures = outcomes.filter((o) => o === "failed").length;
-    if (failures === 0) {
+    const finished = failures === 0 && !outcomes.includes("later");
+    if (finished) {
       await this.noteRefunded(poolId);
       await this.finish(poolId);
     }
@@ -89,7 +141,7 @@ export class RefundJob {
       poolId,
       refunded.flatMap((r) => (r.userId ? [{ userId: r.userId, amount: r.amount }] : [])),
     );
-    return { refunds: refunded.length, failures, finished: failures === 0 };
+    return { refunds: refunded.length, failures, finished };
   }
 
   /** "nothing" or "failed", or who was refunded and how much. */

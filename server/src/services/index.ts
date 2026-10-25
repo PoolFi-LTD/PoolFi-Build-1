@@ -30,6 +30,7 @@ export function createServices(
   const wallets = new Wallets(db, chain, config.walletEncryption);
   const deposits = new Deposits(db, chain, wallets, config.deposits);
   const views = new PoolViews(db, contract, { pool: chain.poolContractId, usdc: chain.usdcContractId });
+  const refunds = new RefundJob(db, chain, contract, wallets, config.refundJob.concurrency, log, notify);
   return {
     wallets,
     deposits,
@@ -45,11 +46,11 @@ export function createServices(
       config.sessionIdleMinutes,
     ),
     pools: new Pools(db, chain, contract, wallets),
-    refunds: new RefundJob(db, chain, contract, wallets, config.refundJob.concurrency, log, notify),
+    refunds,
     // What the web app's screens use (/v1/app).
     app: {
       account: new Account(db, chain, wallets, deposits, views, networkName(config.stellar.networkPassphrase)),
-      pools: new AppPools(db, chain, contract, wallets, views, notify),
+      pools: new AppPools(db, chain, contract, wallets, views, notify, refunds),
     },
   };
 }

@@ -386,19 +386,21 @@ fn cancelled_pool_refunds_members() {
 }
 
 #[test]
-fn expired_pool_below_goal_refunds_members() {
+fn expired_pool_waits_for_its_admin_to_refund() {
     let s = Setup::new();
-    let pool_id = s.new_pool(&s.wallet(0), 100 * USDC);
+    let admin = s.wallet(0);
+    let pool_id = s.new_pool(&admin, 100 * USDC);
     let member = s.wallet(40 * USDC);
     s.pool.contribute(&pool_id, &member, &(40 * USDC));
+
+    s.pass_deadline();
+
+    // Nothing moves until the pool admin decides: no refunds, payments or payout.
+    assert_eq!(s.pool.get_pool(&pool_id).status, PoolStatus::Expired);
     assert_eq!(
         s.pool.try_claim_refund(&pool_id, &member),
         Err(Ok(Error::NotRefundable))
     );
-
-    s.pass_deadline();
-
-    assert_eq!(s.pool.get_pool(&pool_id).status, PoolStatus::Refunded);
     assert_eq!(
         s.pool.try_contribute(&pool_id, &member, &USDC),
         Err(Ok(Error::DeadlinePassed))
@@ -407,11 +409,107 @@ fn expired_pool_below_goal_refunds_members() {
         s.pool.try_join_pool(&pool_id, &s.wallet(0)),
         Err(Ok(Error::DeadlinePassed))
     );
-    assert_eq!(s.pool.try_settle(&pool_id), Err(Ok(Error::PoolClosed)));
+    assert_eq!(s.pool.try_settle(&pool_id), Err(Ok(Error::GoalNotReached)));
+    assert_eq!(s.usdc.balance(&s.pool.address), 40 * USDC);
 
+    s.pool.cancel_pool(&pool_id);
+    assert_eq!(s.env.auths()[0].0, admin);
+    assert_eq!(s.pool.get_pool(&pool_id).status, PoolStatus::Refunded);
     assert_eq!(s.pool.claim_refund(&pool_id, &member), 40 * USDC);
     assert_eq!(s.usdc.balance(&member), 40 * USDC);
     assert_eq!(s.usdc.balance(&s.pool.address), 0);
+}
+
+#[test]
+fn admin_extends_an_expired_pool_as_often_as_needed() {
+    let s = Setup::new();
+    let admin = s.wallet(0);
+    let pool_id = s.new_pool(&admin, 100 * USDC);
+    let member = s.wallet(100 * USDC);
+    s.pool.contribute(&pool_id, &member, &(40 * USDC));
+    s.pass_deadline();
+
+    let later = s.deadline() + 3 * DAY;
+    s.pool.extend_deadline(&pool_id, &later);
+    assert_eq!(s.env.auths()[0].0, admin);
+    assert_eq!(
+        s.pool_events(),
+        [DeadlineExtended {
+            pool_id,
+            old_deadline: s.deadline(),
+            new_deadline: later,
+        }
+        .to_xdr(&s.env, &s.pool.address)]
+    );
+    let pool = s.pool.get_pool(&pool_id);
+    assert_eq!(pool.status, PoolStatus::Open);
+    assert_eq!(pool.deadline, later);
+    s.pool.contribute(&pool_id, &member, &(10 * USDC));
+
+    // Missed again: extended again.
+    s.env.ledger().set_timestamp(later);
+    assert_eq!(s.pool.get_pool(&pool_id).status, PoolStatus::Expired);
+    let even_later = later + 30 * DAY;
+    s.pool.extend_deadline(&pool_id, &even_later);
+    s.pool.contribute(&pool_id, &member, &(50 * USDC));
+    assert_eq!(s.pool.get_pool(&pool_id).status, PoolStatus::Funded);
+    assert_eq!(s.pool.settle(&pool_id), 100 * USDC);
+    assert_eq!(s.usdc.balance(&admin), 100 * USDC);
+}
+
+#[test]
+fn deadline_only_moves_later_and_into_the_future() {
+    let s = Setup::new();
+    let pool_id = s.new_pool(&s.wallet(0), 100 * USDC);
+
+    assert_eq!(
+        s.pool.try_extend_deadline(&pool_id, &s.deadline()),
+        Err(Ok(Error::InvalidDeadline))
+    );
+    assert_eq!(
+        s.pool.try_extend_deadline(&pool_id, &(s.deadline() - DAY)),
+        Err(Ok(Error::InvalidDeadline))
+    );
+    // Before the deadline, it can move later too.
+    s.pool.extend_deadline(&pool_id, &(s.deadline() + DAY));
+
+    s.env.ledger().set_timestamp(s.deadline() + 5 * DAY);
+    assert_eq!(
+        s.pool
+            .try_extend_deadline(&pool_id, &(s.deadline() + 2 * DAY)),
+        Err(Ok(Error::InvalidDeadline))
+    );
+    assert_eq!(
+        s.pool
+            .try_extend_deadline(&pool_id, &(s.deadline() + 5 * DAY)),
+        Err(Ok(Error::InvalidDeadline))
+    );
+    assert_eq!(
+        s.pool.try_extend_deadline(&404, &(s.deadline() + 9 * DAY)),
+        Err(Ok(Error::PoolNotFound))
+    );
+}
+
+#[test]
+fn closed_pools_cannot_be_extended() {
+    let s = Setup::new();
+    let admin = s.wallet(0);
+    let cancelled = s.new_pool(&admin, 100 * USDC);
+    s.pool.cancel_pool(&cancelled);
+    let settled = s.new_pool(&admin, 10 * USDC);
+    s.pool
+        .contribute(&settled, &s.wallet(10 * USDC), &(10 * USDC));
+    s.pool.settle(&settled);
+
+    let later = s.deadline() + DAY;
+    assert_eq!(
+        s.pool.try_extend_deadline(&cancelled, &later),
+        Err(Ok(Error::PoolClosed))
+    );
+    assert_eq!(
+        s.pool.try_extend_deadline(&settled, &later),
+        Err(Ok(Error::PoolClosed))
+    );
 }
 
 #[test]
@@ -481,6 +579,10 @@ fn actions_need_the_right_signature() {
     assert!(s.pool.try_join_pool(&pool_id, &member).is_err());
     assert!(s.pool.try_contribute(&pool_id, &member, &USDC).is_err());
     assert!(s.pool.try_cancel_pool(&pool_id).is_err());
+    assert!(s
+        .pool
+        .try_extend_deadline(&pool_id, &(s.deadline() + DAY))
+        .is_err());
     assert!(s.pool.try_set_admin(&stranger).is_err());
     assert_eq!(s.usdc.balance(&member), 10 * USDC);
 }

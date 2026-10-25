@@ -59,6 +59,7 @@ describe("pools", () => {
     expect(statusOf(state("funded"))).toBe("met");
     expect(statusOf(state("funded", []))).toBe("approval");
     expect(statusOf(state("settled"))).toBe("paidout");
+    expect(statusOf(state("expired"))).toBe("missed");
     expect(statusOf(state("refunded"))).toBe("refunded");
   });
 

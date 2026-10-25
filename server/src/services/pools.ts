@@ -256,7 +256,9 @@ export class Pools {
     }
     const chainPoolId = BigInt(pool.chain_pool_id);
     const state = await this.onChain(() => this.contract.getPool(chainPoolId));
-    if (state.status === "open") throw new ApiError(409, "goal_not_reached", "This pool hasn't reached its goal yet.");
+    if (state.status === "open" || state.status === "expired") {
+      throw new ApiError(409, "goal_not_reached", "This pool hasn't reached its goal yet.");
+    }
     if (state.status === "settled") {
       throw new ApiError(409, "already_withdrawn", "This pool's USDC has already been withdrawn.");
     }

@@ -1,6 +1,6 @@
 # PoolFi Pool Contract — Plan
 
-One Soroban contract on Stellar holds group contributions in USDC. A single deployment manages any number of pools. Each pool has its own admin wallet, goal, deadline and optional approvers. Members join, contribute USDC into the contract, and the money is either released to the pool admin once the goal is met (after a majority of approvers agree, if the pool has any) or returned to members if it isn't. PoolFi's fee is taken from payouts, never from refunds.
+One Soroban contract on Stellar holds group contributions in USDC. A single deployment manages any number of pools. Each pool has its own admin wallet, goal, deadline and optional approvers. Members join, contribute USDC into the contract, and the money is either released to the pool admin once the goal is met (after a majority of approvers agree, if the pool has any) or, if the deadline passes first, the pool admin decides: extend the deadline or cancel so the money goes back to members. PoolFi's fee is taken from payouts, never from refunds.
 
 ## Principles
 
@@ -15,7 +15,7 @@ One Soroban contract on Stellar holds group contributions in USDC. A single depl
 | Role | Who | Can |
 |---|---|---|
 | Contract admin | Address passed to the constructor | Hand over the admin role, upgrade the contract code, change the fee |
-| Pool admin | Wallet passed to `create_pool` | Settle (withdraw) a funded pool, or request the payout when it has approvers; cancel a pool |
+| Pool admin | Wallet passed to `create_pool` | Settle (withdraw) a funded pool, or request the payout when it has approvers; extend the deadline; cancel a pool |
 | Approver | Wallet listed when the pool is created | Approve or decline the pool admin's payout request |
 | Member | Any wallet that joins a pool | Join, contribute, receive a refund |
 | Anyone | — | Read state; trigger a refund (funds always go to the member) |
@@ -25,10 +25,13 @@ One Soroban contract on Stellar holds group contributions in USDC. A single depl
 ```
             total ≥ goal              admin settles
    Open ───────────────────► Funded ─────────────────► Settled
-     │                         │
-     │ deadline passes below   │ admin cancels
-     │ goal, or admin cancels  │
-     └───────────► Refunded ◄──┘
+   │  ▲                        │
+   │  │ admin extends          │ admin cancels
+   │  │ the deadline           │
+   ▼  │                        │
+  Expired ──────────► Refunded ◄┘
+  (deadline passed  admin
+   below the goal)  cancels      (admin can also cancel an Open pool)
 ```
 
 | State | Meaning |
@@ -36,9 +39,10 @@ One Soroban contract on Stellar holds group contributions in USDC. A single depl
 | Open | Accepting joins and contributions until the deadline |
 | Funded | Goal reached. Still accepts joins and contributions until the deadline; the pool admin can settle |
 | Settled | The full pool balance was paid to the pool admin. Final |
+| Expired | The deadline passed before the goal. Nothing moves until the pool admin extends the deadline (back to Open) or cancels (Refunded). Members can't claim refunds on their own |
 | Refunded | Members can claim back what they contributed. Final |
 
-A blockchain can't act by itself when a deadline passes, so expiry is checked whenever the contract is called. A pool that is still Open after its deadline is reported as Refunded.
+A blockchain can't act by itself when a deadline passes, so expiry is checked whenever the contract is called. A pool that is still Open after its deadline is reported as Expired; that status is never stored. The pool admin can extend the deadline any number of times, but only later and into the future.
 
 **Payouts with approvers.** A Funded pool with approvers can't be settled directly. The pool admin calls `request_payout`; each approver then approves or declines. When a majority agrees (`approvers / 2 + 1`, so 2 of 3), the payout happens in the same call. A decline cancels the request and the admin can ask again. Contributions are paused while a request is open, so the amount the approvers agreed to can't change under them.
 
@@ -55,8 +59,9 @@ A blockchain can't act by itself when a deadline passes, so expiry is checked wh
 | `request_payout(pool_id)` | Pool admin | Funded pools with approvers. Opens a payout request |
 | `approve_payout(pool_id, approver) → paid` | `approver` | Records the approval; pays out like `settle` once a majority has approved. Returns whether it paid |
 | `decline_payout(pool_id, approver)` | `approver` | Cancels the open request. The money stays in the pool |
-| `cancel_pool(pool_id)` | Pool admin | Open or Funded → Refunded |
-| `claim_refund(pool_id, member) → amount` | Anyone | Refunded pools only. Returns the member's contribution to the member, once |
+| `extend_deadline(pool_id, new_deadline)` | Pool admin | Open, Expired or Funded pools. Moves the deadline later (it must be in the future); an Expired pool is Open again |
+| `cancel_pool(pool_id)` | Pool admin | Open, Expired or Funded → Refunded |
+| `claim_refund(pool_id, member) → amount` | Anyone | Refunded (cancelled) pools only. Returns the member's contribution to the member, once |
 | `get_pool`, `get_member`, `is_member`, `get_members(start, limit)`, `pool_count`, `admin`, `token`, `fee` | — | Read-only views |
 | `set_fee(bps, recipient)` | Contract admin | Changes the fee, at most 1000 bps (10%) |
 | `set_admin(new_admin)`, `upgrade(wasm_hash)` | Contract admin | Admin handover; code upgrade |
@@ -70,7 +75,7 @@ A blockchain can't act by itself when a deadline passes, so expiry is checked wh
 
 ## Events
 
-`pool_created`, `member_joined`, `contributed`, `pool_funded`, `pool_settled`, `payout_requested`, `payout_approved`, `payout_declined`, `fee_changed`, `pool_cancelled`, `refunded`, `admin_changed`. The app backend indexes these to keep its database in sync, and explorers such as stellar.expert show them for verification.
+`pool_created`, `member_joined`, `contributed`, `pool_funded`, `pool_settled`, `payout_requested`, `payout_approved`, `payout_declined`, `fee_changed`, `deadline_extended`, `pool_cancelled`, `refunded`, `admin_changed`. The app backend indexes these to keep its database in sync, and explorers such as stellar.expert show them for verification.
 
 ## Errors
 
@@ -95,7 +100,7 @@ USDC on Stellar has 7 decimals: 1 USDC = 10,000,000 units. All amounts are `i128
 
 ## Tests
 
-Pool creation, a second wallet joining, and a USDC contribution being recorded (balances moved, totals updated, events emitted, member auth required). Also: Open → Funded → Settled, cancel and refund, expiry and refund, and the error cases (bad goal or deadline, double join, late contribution, early settle, double refund, wrong signer). Tests use a real Stellar Asset Contract token in the test environment, not a mock.
+Pool creation, a second wallet joining, and a USDC contribution being recorded (balances moved, totals updated, events emitted, member auth required). Also: Open → Funded → Settled, cancel and refund, an expired pool waiting for its admin, extending the deadline again and again, and the error cases (bad goal or deadline, double join, late contribution, early settle, double refund, wrong signer). Tests use a real Stellar Asset Contract token in the test environment, not a mock.
 
 Security tests (`contracts/pool/src/test_security.rs`) cover four guarantees: unauthorized wallets can't withdraw (stranger, contributor or contract admin can't settle; nobody can move the contract's USDC directly or contribute from someone else's wallet), a pool can't be settled twice, there are no duplicate refunds, and actions are rejected when the pool state or deadline doesn't allow them. Payout tests keep unrelated pool funds in the contract, so a payout that should be refused would actually succeed if the check were missing.
 

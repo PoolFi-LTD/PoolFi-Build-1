@@ -21,6 +21,8 @@ export function PoolRow({ pool, now, index = 0 }: { pool: PoolSummary; now: numb
       <span className={s.warn}>{closesIn(pool.deadline, now)}</span>
     ) : pool.status === "met" && pool.role === "lifeguard" ? (
       <span className={s.warn}>Ready for payout</span>
+    ) : pool.status === "missed" && pool.role === "lifeguard" ? (
+      <span className={s.warn}>Extend or refund</span>
     ) : null;
   const who = pool.role === "lifeguard" ? `${pool.paidCount} of ${pool.expectedCount} paid` : `lifeguard ${pool.lifeguard.name.split(" ")[0]}`;
   return (
@@ -77,6 +79,8 @@ const ACTIVITY: Record<ActivityItem["kind"], { tag: string; green: boolean; icon
   refund: { tag: "Refund", green: false, icon: "refresh" },
   joined: { tag: "Joined", green: false, icon: "users" },
   created: { tag: "Created", green: false, icon: "plus2" },
+  missed: { tag: "Deadline", green: false, icon: "clock" },
+  extended: { tag: "Extended", green: false, icon: "cal" },
 };
 
 /** A line in an activity feed; `fresh` ones slide in highlighted, the rest rise in turn. */

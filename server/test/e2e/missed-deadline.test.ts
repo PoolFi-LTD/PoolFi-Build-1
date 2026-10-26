@@ -8,7 +8,7 @@ import { startHarness, type Harness, type TestUser } from "./harness.ts";
 
 let h: Harness;
 const people: Record<"lifeguard" | "ada" | "tobi" | "zara", TestUser> = {} as never;
-let pool: { id: string; code: string; chainPoolId: bigint };
+let pool: { id: string; code: string; chainPoolId: bigint; deadline: string };
 
 const app = (method: "GET" | "POST", path: string, user?: TestUser, body?: unknown) => h.call(method, `/v1/app${path}`, user, body);
 /** The shortest deadline the API allows, so the test can wait it out. */
@@ -17,12 +17,17 @@ const phone = (key: string) => h.pushes.filter((p) => p.endpoint === `https://pu
 const inbox = (to: string) => h.emails.filter((e) => e.to === to).map((e) => e.subject);
 const balance = async (user: TestUser) => (await app("GET", "/wallet", user)).body.balance as number;
 
-/** Waits for the ledger clock to pass the pool's deadline. */
+/**
+ * Waits for the ledger clock, and this machine's, to pass the pool's deadline:
+ * the contract can report it expired a few seconds before the database does.
+ */
 async function waitForExpiry() {
   for (let i = 0; (await h.contract.getPool(pool.chainPoolId)).status !== "expired"; i++) {
     if (i > 40) throw new Error("the pool never expired on-chain");
     await new Promise((resolve) => setTimeout(resolve, 5_000));
   }
+  const wait = new Date(pool.deadline).getTime() + 2_000 - Date.now();
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
 }
 
 beforeAll(async () => {
@@ -33,7 +38,13 @@ beforeAll(async () => {
     people[key] = user;
     expect((await app("GET", "/me", user)).status).toBe(200);
     const [firstName, lastName] = name.split(" ");
-    await h.app.inject({ method: "PUT", url: "/v1/app/me/profile", headers: user.headers, payload: { firstName, lastName, avatar: null } });
+    const saved = await h.app.inject({
+      method: "PUT",
+      url: "/v1/app/me/profile",
+      headers: user.headers,
+      payload: { firstName, lastName, avatar: { kind: "emoji", emoji: "🌻", bg: "#F4E8D2" } },
+    });
+    expect(saved.statusCode).toBe(200);
     const device = { endpoint: `https://push.example.com/${key}`, keys: { p256dh: "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlU", auth: "tBHItJI5svbpez7KI4CCXg" } };
     expect((await app("POST", "/push/subscriptions", user, device)).status).toBe(201);
   }
@@ -46,6 +57,7 @@ afterAll(async () => {
 describe("a pool that misses its deadline", () => {
   it("waits for the lifeguard instead of refunding", async () => {
     expect((await app("POST", "/wallet/deposits", people.ada, { amount: 3 })).status).toBe(201);
+    const deadline = soon();
     const created = await app("POST", "/pools", people.lifeguard, {
       type: "Class dues",
       emoji: "🥼",
@@ -53,7 +65,7 @@ describe("a pool that misses its deadline", () => {
       amount: 1,
       feeCoveredByDivers: false,
       expectedCount: 3,
-      deadline: soon(),
+      deadline,
       approverIds: [people.tobi.id],
       members: [],
       pickYourName: false,
@@ -62,7 +74,7 @@ describe("a pool that misses its deadline", () => {
     });
     expect(created.status).toBe(201);
     const [row] = await h.db.query<{ chain_pool_id: string }>("select chain_pool_id from pools where id = $1", [created.body.id]);
-    pool = { id: created.body.id, code: created.body.code, chainPoolId: BigInt(row?.chain_pool_id ?? "0") };
+    pool = { id: created.body.id, code: created.body.code, chainPoolId: BigInt(row?.chain_pool_id ?? "0"), deadline };
     expect((await app("POST", `/invites/${pool.code}/pay`, people.ada, { name: "Ada Eze" })).status).toBe(201);
     // The lifeguard can't refund an open pool.
     expect((await app("POST", `/pools/${pool.id}/refund`, people.lifeguard)).body.error.code).toBe("deadline_not_passed");
@@ -97,6 +109,7 @@ describe("a pool that misses its deadline", () => {
     const extended = await app("POST", `/pools/${pool.id}/extend`, people.lifeguard, { deadline });
     expect(extended.status).toBe(200);
     expect(extended.body).toMatchObject({ status: "active", deadline: new Date(deadline).toISOString() });
+    pool.deadline = deadline;
     expect(extended.body.activity[0].title).toBe("You extended the deadline for Lab coats");
     expect((await h.contract.getPool(pool.chainPoolId)).status).toBe("open");
 

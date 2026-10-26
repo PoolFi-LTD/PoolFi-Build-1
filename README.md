@@ -19,7 +19,8 @@ The development deployment runs the same code and is what the server's automated
 
 | Code (Wasm hash) | Change | Running on |
 |---|---|---|
-| `0d70a2d9170bc74cbb9631be3bd3c43ffbc51b324e5d99447a7dbaf758e459c9` | Payout approvers (majority must agree) and the PoolFi fee on payouts; errors 110–118 | Development deployment (upgraded in [`940ba6ee…`](https://stellar.expert/explorer/testnet/tx/940ba6ee20be4760d782bc1c93c5dca63bcc1a287663e95ede5d61eeb21f754e), fee set to 5% in [`c52c535f…`](https://stellar.expert/explorer/testnet/tx/c52c535f0f67d4df431e4f32cd5db497ec5ac7339d07a48dd5b18b2f689ed424)) |
+| `9ad4d3b934929e473c543ee480511d05e814a7604e457c5e3356b6ad4f1a5480` | A missed deadline waits for the pool admin: `extend_deadline` (any number of times) or `cancel_pool` to refund; no refunds by themselves (status `Expired`) | Development deployment (uploaded in [`88759b8d…`](https://stellar.expert/explorer/testnet/tx/88759b8d40758aa357e1d34916a64aed3e2a3d8a0a9c82003554e83171c9384e), upgraded in [`c1b3d30d…`](https://stellar.expert/explorer/testnet/tx/c1b3d30db756fbc6c3e5f824a95445cb382bdc39c10e401274e97522f983f1be)) |
+| `0d70a2d9170bc74cbb9631be3bd3c43ffbc51b324e5d99447a7dbaf758e459c9` | Payout approvers (majority must agree) and the PoolFi fee on payouts; errors 110–118 | Development deployment before the missed-deadline release (upgraded in [`940ba6ee…`](https://stellar.expert/explorer/testnet/tx/940ba6ee20be4760d782bc1c93c5dca63bcc1a287663e95ede5d61eeb21f754e), fee set to 5% in [`c52c535f…`](https://stellar.expert/explorer/testnet/tx/c52c535f0f67d4df431e4f32cd5db497ec5ac7339d07a48dd5b18b2f689ed424)) |
 | `b4f6432c90ab25f5a07f55e8403903742a237f3a41bae074656fd0a7f0f1c861` | Error codes renumbered to 100–109 so they can't clash with the USDC token's codes | Development deployment before the approvers release (upgraded in [`d0f0c729…`](https://stellar.expert/explorer/testnet/tx/d0f0c729a7023ff20d5bf826f7e05f5fa39c05543198fce66f0c970f864ec7e7)) |
 | `70bf2650a1a9f3a24ec80517d03ec1f56ecb3534be8dfbc594d8a733e6af70b5` | First release, errors 1–10 | Client's deployment, until its Admin upgrades |
 
@@ -27,12 +28,12 @@ The newest code is uploaded to testnet. Upgrading keeps the contract ID and all 
 
 ```sh
 stellar contract invoke --id <contract ID> --network testnet --source-account <admin identity> -- \
-  upgrade --new_wasm_hash 0d70a2d9170bc74cbb9631be3bd3c43ffbc51b324e5d99447a7dbaf758e459c9
+  upgrade --new_wasm_hash 9ad4d3b934929e473c543ee480511d05e814a7604e457c5e3356b6ad4f1a5480
 stellar contract invoke --id <contract ID> --network testnet --source-account <admin identity> -- \
   set_fee --bps 500 --recipient <PoolFi fee wallet>
 ```
 
-The server understands both error numberings, so it works before and after the upgrade.
+The server understands both error numberings, and both ways a contract reports a missed deadline (`Refunded` before this release, `Expired` after), so it works before and after the upgrade.
 
 ## Layout
 

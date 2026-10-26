@@ -139,7 +139,14 @@ export function NamePickerRow({ name, selected, paid, onSelect }: { name: string
     >
       <Avatar name={name} size={34} />
       <span className={s.pickName}>{name}</span>
-      {paid ? <StatusPill status="paid" /> : <span className={`${s.radio}${selected ? " okpop" : ""}`}>{selected && <Icon name="check" />}</span>}
+      {paid ? (
+        <StatusPill status="paid" />
+      ) : (
+        <>
+          <StatusPill status="not_paid" />
+          <span className={`${s.radio}${selected ? " okpop" : ""}`}>{selected && <Icon name="check" />}</span>
+        </>
+      )}
     </button>
   );
 }

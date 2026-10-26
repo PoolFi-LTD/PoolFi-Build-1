@@ -191,10 +191,11 @@ function InviteBody({
   const left = countdown(p.deadline, now);
   const pct = p.progress;
   const open = p.status === "active" || p.status === "met";
+  // Everyone on the list, still to pay first, then who has paid; a search narrows it.
   const matches = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const list = needle ? inv.names.filter((n) => n.name.toLowerCase().includes(needle)) : inv.names.filter((n) => !n.paid);
-    return [...list].sort((a, b) => Number(a.paid) - Number(b.paid)).slice(0, 6);
+    const list = needle ? inv.names.filter((n) => n.name.toLowerCase().includes(needle)) : inv.names;
+    return [...list].sort((a, b) => Number(a.paid) - Number(b.paid));
   }, [inv.names, q]);
   const chosen = inv.names.find((n) => n.id === diverId);
   const payer = notOnList || !p.pickYourName ? (name.trim() ? { name: name.trim() } : null) : chosen ? { diverId: chosen.id } : null;

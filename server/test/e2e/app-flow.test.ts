@@ -315,7 +315,8 @@ describe("a pool with approvers", () => {
     expect(own.body.activity.filter((a: { kind: string }) => a.kind === "payment").map((a: { title: string }) => a.title)).toEqual([
       "You paid into 300L Class Dues",
     ]);
-    expect((await app("GET", `/invites/${pool.code}`)).body.names.every((n: { paid: boolean }) => !n.paid)).toBe(true);
+    // The invite link's name list always shows who has paid (never the amounts), so nobody picks a paid name.
+    expect((await app("GET", `/invites/${pool.code}`)).body.names.every((n: { paid: boolean }) => n.paid)).toBe(true);
     // Approvers and the lifeguard always see everyone.
     expect((await app("GET", `/pools/${pool.id}`, people.tobi)).body.divers).toHaveLength(2);
 

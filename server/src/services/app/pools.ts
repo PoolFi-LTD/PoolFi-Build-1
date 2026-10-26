@@ -301,9 +301,8 @@ export class AppPools {
         allowNotOnList: row.allow_not_on_list,
       },
       lifeguard: { name: nameOf(lifeguard), avatar: lifeguard?.avatar ?? null },
-      // Names only: contacts are never shown on the public page, nor who has paid
-      // unless the lifeguard lets divers see payments.
-      names: divers.map((d) => ({ id: d.id, name: d.name, paid: row.divers_see_payments && d.paid_at !== null })),
+      // Names and who has paid: contacts and amounts are never shown on the public page.
+      names: divers.map((d) => ({ id: d.id, name: d.name, paid: d.paid_at !== null })),
     };
   }
 

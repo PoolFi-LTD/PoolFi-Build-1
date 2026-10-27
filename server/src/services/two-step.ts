@@ -99,6 +99,7 @@ export class TwoStep {
   /** Emails a code to finish signing in. Only for a session signed in with its password. */
   async sendSignInCode(user: AuthUser, appUrl: string | null): Promise<{ alreadyVerified: boolean }> {
     const { sessionId, email } = this.passwordSession(user);
+    await this.ensureNotSuspended(user.id);
     if (await this.isVerified(sessionId)) return { alreadyVerified: true };
     await this.ensureUnlocked(email);
     await this.throttle("session_id", sessionId);
@@ -110,6 +111,7 @@ export class TwoStep {
   /** Checks the emailed code. Right: the session can use the app. */
   async verifySignInCode(user: AuthUser, code: string): Promise<void> {
     const { sessionId, email } = this.passwordSession(user);
+    await this.ensureNotSuspended(user.id);
     if (await this.isVerified(sessionId)) return;
     await this.ensureUnlocked(email);
     const [row] = await this.db.query<CodeRow>(
@@ -180,12 +182,14 @@ export class TwoStep {
    */
   async requireVerified(user: AuthUser): Promise<void> {
     if (user.sessionId) {
-      const [active] = await this.db.query<{ user_id: string }>(
-        `update verified_sessions set last_seen_at = now()
-         where session_id = $1 and last_seen_at > now() - make_interval(mins => $2)
-         returning user_id`,
+      const [active] = await this.db.query<{ user_id: string; suspended_at: Date | null }>(
+        `update verified_sessions s set last_seen_at = now()
+         from users u
+         where s.session_id = $1 and s.last_seen_at > now() - make_interval(mins => $2) and u.id = s.user_id
+         returning s.user_id, u.suspended_at`,
         [user.sessionId, this.idleMinutes],
       );
+      if (active?.suspended_at) throw suspended();
       if (active) return;
       const [closed] = await this.db.query<{ session_id: string }>(
         "delete from verified_sessions where session_id = $1 returning session_id",
@@ -214,6 +218,12 @@ export class TwoStep {
       throw new ApiError(403, "password_required", "Sign in with your email and password first.");
     }
     return { sessionId: user.sessionId, email: normalize(user.email) };
+  }
+
+  /** The PoolFi team suspended this account (admin dashboard): no signing in until they lift it. */
+  private async ensureNotSuspended(userId: string) {
+    const [row] = await this.db.query<{ suspended_at: Date | null }>("select suspended_at from users where id = $1", [userId]);
+    if (row?.suspended_at) throw suspended();
   }
 
   private async ensureUnlocked(email: string) {
@@ -297,6 +307,10 @@ export class TwoStep {
     }
     await this.mail.send([email]);
   }
+}
+
+function suspended() {
+  return new ApiError(403, "account_suspended", "This PoolFi account is suspended. Contact PoolFi support if you think this is a mistake.");
 }
 
 function normalize(email: string): string {

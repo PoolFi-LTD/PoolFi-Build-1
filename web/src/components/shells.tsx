@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { fullName } from "@/lib/format";
-import type { User } from "@/lib/types";
+import type { Me } from "@/lib/types";
 import { Drip } from "./Drip";
 import { Icon, Logo, type IconName } from "./Icon";
 import { Sea } from "./motion";
@@ -43,7 +43,7 @@ function NavLink({ href, label, icon }: { href: string; label: string; icon: Ico
   );
 }
 
-function Sidebar({ user }: { user: User }) {
+function Sidebar({ user }: { user: Me }) {
   const { signOut } = useSession();
   const router = useRouter();
   return (
@@ -59,6 +59,7 @@ function Sidebar({ user }: { user: User }) {
       {ACCOUNT.map((item) => (
         <NavLink key={item.href} {...item} />
       ))}
+      {user.admin && <NavLink href="/admin" label="Admin" icon="shield" />}
       <div className={s.userCard}>
         <div className={s.userRow}>
           <Avatar name={fullName(user)} avatar={user.avatar} />
@@ -145,7 +146,7 @@ function TabBar() {
 }
 
 /** Signed-in screens: the sidebar and the white main panel; on phones, a tab bar instead of the sidebar. */
-export function AppShell({ children }: { children: (user: User) => ReactNode }) {
+export function AppShell({ children }: { children: (user: Me) => ReactNode }) {
   // The sidebar and the sign-in check read the URL, which needs a Suspense boundary.
   return (
     <Suspense fallback={<LoadingState />}>

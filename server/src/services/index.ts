@@ -3,6 +3,7 @@ import type { Db } from "../db.ts";
 import { createMailer, type Mailer } from "../email/mailer.ts";
 import type { Chain } from "../stellar/chain.ts";
 import { PoolContract } from "../stellar/pool-contract.ts";
+import { Admin } from "./admin.ts";
 import { Account, networkName } from "./app/account.ts";
 import { Notifications } from "./app/notifications.ts";
 import { PoolViews } from "./app/pool-views.ts";
@@ -31,6 +32,7 @@ export function createServices(
   const deposits = new Deposits(db, chain, wallets, config.deposits);
   const views = new PoolViews(db, contract, { pool: chain.poolContractId, usdc: chain.usdcContractId });
   const refunds = new RefundJob(db, chain, contract, wallets, config.refundJob.concurrency, log, notify);
+  const appPools = new AppPools(db, chain, contract, wallets, views, notify, refunds);
   return {
     wallets,
     deposits,
@@ -50,8 +52,10 @@ export function createServices(
     // What the web app's screens use (/v1/app).
     app: {
       account: new Account(db, chain, wallets, deposits, views, networkName(config.stellar.networkPassphrase)),
-      pools: new AppPools(db, chain, contract, wallets, views, notify, refunds),
+      pools: appPools,
     },
+    // The PoolFi team's dashboard (/v1/admin).
+    admin: new Admin(db, config, chain, views, appPools, wallets, refunds),
   };
 }
 

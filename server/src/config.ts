@@ -102,6 +102,10 @@ const EnvSchema = z
       .refine(isTimeZone, "must be a time zone, e.g. Africa/Lagos")
       .default("Africa/Lagos"),
 
+    // The PoolFi team: comma-separated emails that can open the admin dashboard (/admin).
+    // They sign in like everyone else (password and emailed code). Unset: nobody can.
+    ADMIN_EMAILS: z.string().optional(),
+
     // How often the server refunds contributors of pools that missed their goal. 0 turns
     // the built-in schedule off (run `npm run refunds` from an external scheduler instead).
     REFUND_JOB_INTERVAL_SECONDS: z.coerce.number().int().min(0).default(300),
@@ -184,6 +188,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
           }
         : null,
     sessionIdleMinutes: e.SESSION_IDLE_MINUTES,
+    adminEmails: (e.ADMIN_EMAILS ?? "")
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
     push:
       e.VAPID_PUBLIC_KEY && e.VAPID_PRIVATE_KEY
         ? { publicKey: e.VAPID_PUBLIC_KEY, privateKey: e.VAPID_PRIVATE_KEY, subject: e.VAPID_SUBJECT ?? "mailto:hello@thepoolfi.com" }

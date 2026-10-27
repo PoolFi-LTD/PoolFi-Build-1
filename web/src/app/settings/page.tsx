@@ -14,7 +14,7 @@ import { api } from "@/lib/api";
 import { fullName } from "@/lib/format";
 import { useResource } from "@/lib/hooks";
 import { setSoundOn, soundOn } from "@/lib/sound";
-import type { Achievements, User } from "@/lib/types";
+import type { Achievements, Me as SignedIn } from "@/lib/types";
 import s from "./settings.module.css";
 
 const FAQS: [string, string][] = [
@@ -76,7 +76,7 @@ function Badges({ a }: { a: Achievements }) {
   );
 }
 
-function Me({ user }: { user: User }) {
+function Me({ user }: { user: SignedIn }) {
   const { signOut } = useSession();
   const router = useRouter();
   const toast = useToast();
@@ -163,6 +163,7 @@ function Me({ user }: { user: User }) {
               />
             </Row>
             <Row icon="help" label="Help and FAQs" onClick={() => setSheet("help")} />
+            {user.admin && <Row icon="shield" label="Admin dashboard" detail="PoolFi team" href="/admin" />}
             <Row icon="out" label="Log out" onClick={() => setSheet("logout")} danger />
           </div>
           <p className="t-caption muted" style={{ textAlign: "center", marginTop: 18 }}>

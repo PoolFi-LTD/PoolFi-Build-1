@@ -517,8 +517,19 @@ export class AppPools {
    */
   async extendDeadline(user: AuthUser, poolId: string, input: z.infer<typeof ExtendDeadlineInput>, appUrl: string): Promise<PoolDetail> {
     const row = await this.lifeguardsPool(user, poolId, "Only the lifeguard can change the deadline.");
-    const deadline = new Date(input.deadline);
-    if (deadline.getTime() < Date.now() + MIN_DEADLINE_LEAD_MS) {
+    await this.wallets.ensureUser(user);
+    const lifeguard = (await this.views.people([user.id])).get(user.id);
+    const updated = await this.extend(row, new Date(input.deadline), { userId: user.id, name: nameOf(lifeguard) }, appUrl);
+    return this.views.detail(updated, user.id);
+  }
+
+  /**
+   * Moves a pool's deadline later, in the contract (signed with the lifeguard's wallet)
+   * and here, and tells the pool. `by` is who the activity line names: the lifeguard,
+   * or PoolFi when the team does it for them from the admin dashboard.
+   */
+  async extend(row: AppPoolRow, deadline: Date, by: { userId: string | null; name: string }, appUrl: string | null): Promise<AppPoolRow> {
+    if (Number.isNaN(deadline.getTime()) || deadline.getTime() < Date.now() + MIN_DEADLINE_LEAD_MS) {
       throw new ApiError(400, "invalid_deadline", "The new deadline must be at least a minute from now.");
     }
     const state = await this.views.state(row);
@@ -530,11 +541,9 @@ export class AppPools {
     if (deadline.getTime() <= state.deadline.getTime()) {
       throw new ApiError(400, "invalid_deadline", "Pick a date after the current deadline.");
     }
-    await this.wallets.ensureUser(user);
-    const keypair = await this.wallets.keypair(user.id);
+    const keypair = await this.wallets.keypair(row.admin_user_id);
     const txHash = await this.views.onChain(() => this.contract.extendDeadline(keypair, BigInt(row.chain_pool_id), deadline));
 
-    const lifeguard = (await this.views.people([user.id])).get(user.id);
     const updated = await this.db.transaction(async (client) => {
       // A new deadline is a new chance: if it passes too, the lifeguard is asked again.
       const { rows } = await client.query<AppPoolRow>(
@@ -543,12 +552,44 @@ export class AppPools {
       );
       await client.query(
         "insert into activity (pool_id, kind, actor_user_id, actor_name, data) values ($1, 'extended', $2, $3, $4)",
-        [row.id, user.id, nameOf(lifeguard), JSON.stringify({ deadline: deadline.toISOString(), txHash })],
+        [row.id, by.userId, by.name, JSON.stringify({ deadline: deadline.toISOString(), txHash })],
       );
       return rows[0] ?? row;
     });
-    await this.notify.extended(updated, { lifeguardName: nameOf(lifeguard) }, appUrl);
-    return this.views.detail(updated, user.id);
+    await this.notify.extended(updated, { lifeguardName: by.name }, appUrl);
+    return updated;
+  }
+
+  /**
+   * The PoolFi team closes a pool that hasn't paid out (from the admin dashboard): the
+   * contract cancels it, signed with the lifeguard's wallet, a payout waiting for
+   * approvers is dropped, and everyone who paid is refunded. Closing a pool already
+   * being refunded sends whatever refunds are left.
+   */
+  async close(row: AppPoolRow): Promise<AppPoolRow> {
+    const state = await this.views.state(row);
+    if (state.status === "settled") throw new ApiError(409, "already_paid_out", "This pool has already been paid out.");
+    // Recorded first, so the refund job picks the pool up even if this stops part way.
+    await this.db.query("update pools set refund_chosen_at = coalesce(refund_chosen_at, now()) where id = $1", [row.id]);
+    if (state.status !== "refunded") {
+      const keypair = await this.wallets.keypair(row.admin_user_id);
+      await this.views.onChain(() => this.contract.cancelPool(keypair, BigInt(row.chain_pool_id)));
+      await this.db.transaction(async (client) => {
+        await client.query(
+          `update payout_requests set declined_at = now(), decline_reason = 'PoolFi closed the pool'
+           where pool_id = $1 and paid_at is null and declined_at is null`,
+          [row.id],
+        );
+        // The pool's line says PoolFi closed it; the refund job won't add its own after this.
+        await client.query(
+          `insert into activity (pool_id, kind, amount, data)
+           select $1::uuid, 'refund', $2, $3 where not exists (select 1 from activity where pool_id = $1::uuid and kind = 'refund')`,
+          [row.id, state.totalContributed.toString(), JSON.stringify({ closedBy: "poolfi" })],
+        );
+      });
+    }
+    await this.refunds?.refundNow(row.id, BigInt(row.chain_pool_id));
+    return this.views.byId(row.id);
   }
 
   /**

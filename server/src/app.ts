@@ -1,6 +1,7 @@
 import cors from "@fastify/cors";
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
+import { adminRoutes } from "./admin-routes.ts";
 import { appRoutes } from "./app-routes.ts";
 import { authRoutes } from "./auth-routes.ts";
 import { createAuthenticator, type AuthUser } from "./auth.ts";
@@ -46,6 +47,12 @@ export async function buildApp({ config, db, chain, mailer, pushSender }: AppDep
   const signedIn = async (request: FastifyRequest): Promise<AuthUser> => {
     const user = await authenticate(request.headers.authorization);
     await services.twoStep.requireVerified(user);
+    return user;
+  };
+  /** A signed-in member of the PoolFi team (ADMIN_EMAILS), for the admin dashboard. */
+  const adminOnly = async (request: FastifyRequest): Promise<AuthUser> => {
+    const user = await signedIn(request);
+    if (!services.admin.isAdmin(user)) throw new ApiError(403, "not_admin", "This page is for the PoolFi team.");
     return user;
   };
   /** Any valid sign-in token, before the emailed code (for the sign-in steps themselves). */
@@ -127,7 +134,8 @@ export async function buildApp({ config, db, chain, mailer, pushSender }: AppDep
     return pools.withdraw(await signedIn(request), request.params.poolId);
   });
 
-  await app.register(appRoutes(services.app, signedIn, config, services.push), { prefix: "/v1/app" });
+  await app.register(appRoutes(services.app, signedIn, config, services.push, services.admin), { prefix: "/v1/app" });
+  await app.register(adminRoutes(services.admin, adminOnly, config), { prefix: "/v1/admin" });
   await app.register(authRoutes(services.twoStep, tokenOnly, config), { prefix: "/v1/auth" });
 
   return { app, services };

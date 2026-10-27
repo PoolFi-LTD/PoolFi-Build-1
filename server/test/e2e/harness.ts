@@ -45,6 +45,8 @@ export async function startHarness() {
     databaseUrl: Object.assign(new URL(base.databaseUrl), { pathname: `/${database}` }).toString(),
     // A small daily limit so the limit is exercised without spending much treasury USDC.
     deposits: base.deposits && { ...base.deposits, dailyMax: parseUsdc("60") },
+    // The PoolFi team; anyone else signed in is turned away from the admin dashboard.
+    adminEmails: ["admin@example.com", "ops@example.com"],
   };
   const { jwtSecret, audience } = config.auth;
   if (!jwtSecret) throw new Error("End-to-end tests sign their own tokens and need AUTH_JWT_SECRET");

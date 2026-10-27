@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { Me } from "./api-types.ts";
 import type { AuthUser } from "./auth.ts";
 import type { Config } from "./config.ts";
 import { parse } from "./parse.ts";
@@ -12,6 +13,7 @@ import {
   PayoutInput,
   PoolSettingsInput,
 } from "./services/app/pools.ts";
+import type { Admin } from "./services/admin.ts";
 import type { Services } from "./services/index.ts";
 import { SubscriptionInput, type Push } from "./services/push.ts";
 
@@ -37,15 +39,21 @@ export function appRoutes(
   signedIn: (request: FastifyRequest) => Promise<AuthUser>,
   config: Config,
   push: Push,
+  admin: Pick<Admin, "isAdmin">,
 ) {
   const appUrl = (request: FastifyRequest) => requestAppUrl(config, request);
 
   return async (app: FastifyInstance) => {
     // You
-    app.get("/me", async (request) => account.me(await signedIn(request)));
-    app.put("/me/profile", { bodyLimit: LARGE_BODY }, async (request) =>
-      account.saveProfile(await signedIn(request), parse(ProfileInput, request.body)),
-    );
+    // `admin`: whether they can open the admin dashboard.
+    app.get("/me", async (request): Promise<Me> => {
+      const user = await signedIn(request);
+      return { ...(await account.me(user)), admin: admin.isAdmin(user) };
+    });
+    app.put("/me/profile", { bodyLimit: LARGE_BODY }, async (request): Promise<Me> => {
+      const user = await signedIn(request);
+      return { ...(await account.saveProfile(user, parse(ProfileInput, request.body))), admin: admin.isAdmin(user) };
+    });
     app.get("/me/achievements", async (request) => account.achievements(await signedIn(request)));
     app.put("/me/preferences", async (request) =>
       account.savePreferences(await signedIn(request), parse(PreferencesInput, request.body)),

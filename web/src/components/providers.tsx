@@ -5,20 +5,21 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { api } from "@/lib/api";
 import { forgetActivity, idleTooLong, isPublicPath, lastActive, markActive, PING_EVERY_MS, SESSION_EXPIRED_EVENT } from "@/lib/idle";
 import { registerServiceWorker, syncPush } from "@/lib/push";
-import type { User } from "@/lib/types";
+import type { Me } from "@/lib/types";
 import { sound } from "@/lib/sound";
 import { playSplash, reducedMotion, Splash } from "./motion";
 import { LoadingState } from "./ui";
 
 interface Session {
-  user: User | null;
+  /** The signed-in person; `admin` when they're on the PoolFi team. */
+  user: Me | null;
   loading: boolean;
   /** New notifications since the inbox was last read. */
   unread: number;
   setUnread: (n: number) => void;
   /** Asks the server again; each signed-in page does when it opens. */
   refreshUnread: () => void;
-  refresh: () => Promise<User | null>;
+  refresh: () => Promise<Me | null>;
   signOut: () => Promise<void>;
   /** Signed out for being idle too long: pages send people to sign in, then back. */
   idleOut: boolean;
@@ -28,7 +29,7 @@ const SessionContext = createContext<Session | null>(null);
 const ToastContext = createContext<(message: string, icon?: string) => void>(() => {});
 
 export function Providers({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [unread, setUnread] = useState(0);
   const [toast, setToast] = useState<{ message: string; icon: string; id: number; leaving?: boolean } | null>(null);
@@ -197,7 +198,7 @@ export function useToast() {
 }
 
 /** Shows `children` only to signed-in users; everyone else goes to the welcome screen. */
-export function RequireSession({ children }: { children: (user: User) => ReactNode }) {
+export function RequireSession({ children }: { children: (user: Me) => ReactNode }) {
   const { user, loading, idleOut } = useSession();
   const router = useRouter();
   const path = usePathname();

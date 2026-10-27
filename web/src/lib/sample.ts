@@ -6,6 +6,8 @@
  * figures converted at ₦1,400 = 1 USDC), answered the way the API will answer.
  * State is kept in the browser so a refresh doesn't lose your place.
  */
+import type { AdminApi } from "./admin-api";
+import { actionSentence } from "./admin-text";
 import type { PoolFiApi } from "./api";
 import { ApiError } from "./errors";
 import { feeOf, fromNaira, grossShare, roundUsdc } from "./money";
@@ -13,6 +15,18 @@ import { CODE_LENGTH } from "./signin";
 import type {
   Achievements,
   ActivityItem,
+  AdminAction,
+  AdminChain,
+  AdminContribution,
+  AdminDeposit,
+  AdminEvent,
+  AdminPayout,
+  AdminPerson,
+  AdminPoolDetail,
+  AdminPoolRow,
+  AdminRefund,
+  AdminUserDetail,
+  AdminUserRow,
   Approver,
   CreatePoolInput,
   Diver,
@@ -96,7 +110,16 @@ interface SampleState {
   remindersOff?: Record<string, boolean>;
   users: Record<string, SampleUser>;
   pools: SamplePool[];
+  /** The admin dashboard's own state: in the sample, everyone signed in is on the team. */
+  admin?: SampleAdmin;
   nextId: number;
+}
+
+interface SampleAdmin {
+  suspended: Record<string, { at: number; reason: string }>;
+  log: AdminAction[];
+  /** Wallets the sample shows not yet on Stellar, by user id. */
+  inactive: Record<string, boolean>;
 }
 
 // Seed
@@ -554,7 +577,8 @@ export const sampleApi: PoolFiApi = {
   getSession: () =>
     respond(() => {
       const s = load();
-      return s.session ? s.users[s.session] : null;
+      // Everyone signed in to the sample can open the admin dashboard.
+      return s.session ? { ...s.users[s.session], admin: true } : null;
     }, 60),
 
   signUp: (email, password) =>
@@ -577,6 +601,9 @@ export const sampleApi: PoolFiApi = {
       const locked = () => new ApiError("account_locked", "Your account is locked after too many wrong passwords. We emailed you a code to unlock it.");
       if ((s.failures[value] ?? 0) >= MAX_TRIES) throw locked();
       const found = Object.values(s.users).find((u) => u.email === value);
+      if (found && s.admin?.suspended[found.id]) {
+        throw new ApiError("account_suspended", "This PoolFi account is suspended. Contact PoolFi support if you think this is a mistake.");
+      }
       if (!found || (s.passwords[found.id] ?? SAMPLE_PASSWORD) !== password) {
         const failures = (s.failures[value] = (s.failures[value] ?? 0) + 1);
         if (failures >= MAX_TRIES) throw locked();
@@ -632,7 +659,7 @@ export const sampleApi: PoolFiApi = {
       const s = load();
       const u = me(s);
       Object.assign(u, { firstName: firstName.trim(), lastName: lastName.trim(), avatar });
-      return u;
+      return { ...u, admin: true };
     }),
 
   signOut: () =>
@@ -1045,4 +1072,501 @@ export const sampleApi: PoolFiApi = {
     }),
 
   verifyReceipt: (ref) => respond(() => receiptFor(load(), ref)),
+};
+
+// The admin dashboard, worked out from the same sample people and pools
+
+/** The sample's made-up chain: no explorer, since its transactions never happened. */
+const SAMPLE_CHAIN: AdminChain = { network: NETWORK, poolContractId: address("pool-contract").replace(/^G/, "C"), explorer: null };
+
+function adminState(s: SampleState): SampleAdmin {
+  // One wallet isn't on Stellar yet, so the money page has something to fix.
+  s.admin ??= { suspended: {}, log: [], inactive: { kunle: true } };
+  return s.admin;
+}
+
+const iso = (at: number) => new Date(at).toISOString();
+
+/** A well-formed but made-up transaction hash. */
+function hashOf(seed: string): string {
+  let h = 2166136261;
+  let out = "";
+  for (let i = 0; i < 64; i++) {
+    h = Math.imul(h ^ (seed.charCodeAt(i % seed.length) + i), 16777619) >>> 0;
+    out += (h % 16).toString(16);
+  }
+  return out;
+}
+
+function personOf(s: SampleState, id: string): AdminPerson {
+  const u = s.users[id];
+  return u ? { id, name: fullName(u) || (u.email ?? "PoolFi user"), email: u.email } : { id: "", name: id, email: null };
+}
+
+/** Someone on a pool's list: a PoolFi user if they paid as one, else just their name. */
+function diverPerson(s: SampleState, d: Diver): AdminPerson {
+  return d.userId ? personOf(s, d.userId) : { id: "", name: d.name, email: null };
+}
+
+function poolRef(p: SamplePool) {
+  return { id: p.id, name: p.name, emoji: p.emoji };
+}
+
+/** When a sample person joined: before the first pool they're in, else a few days back. */
+function joinedAt(s: SampleState, u: SampleUser, now: number): number {
+  const index = Object.keys(s.users).indexOf(u.id);
+  const first = Math.min(now - (index + 1) * 2 * DAY, ...s.pools.filter((p) => roleOf(p, u.id)).map((p) => p.createdAt));
+  return first - (index + 1) * HOUR;
+}
+
+function adminUserRow(s: SampleState, u: SampleUser, now: number): AdminUserRow {
+  const paid = s.pools.flatMap((p) => p.divers.filter((d) => d.userId === u.id && d.paid));
+  const pools = s.pools.filter((p) => roleOf(p, u.id)).length;
+  const joined = joinedAt(s, u, now);
+  const lastSeen = u.id === s.session ? now : Math.max(joined, ...paid.map((d) => (d.paidAt ? Date.parse(d.paidAt) : 0)));
+  return {
+    id: u.id,
+    name: personOf(s, u.id).name,
+    email: u.email,
+    phone: u.phone,
+    avatar: u.avatar,
+    joinedAt: iso(joined),
+    lastSeenAt: iso(lastSeen),
+    state: pools === 0 && paid.length === 0 ? "new" : now - lastSeen < 7 * DAY ? "active" : "quiet",
+    pools,
+    created: s.pools.filter((p) => p.lifeguardId === u.id).length,
+    paid: roundUsdc(paid.reduce((sum, d) => sum + d.amount, 0)),
+    payments: paid.length,
+    deposited: roundUsdc(u.transactions.filter((t) => t.kind === "deposit").reduce((sum, t) => sum + t.amount, 0)),
+    wallet: { address: u.walletAddress, activated: !adminState(s).inactive[u.id] },
+    suspended: Boolean(adminState(s).suspended[u.id]),
+    locked: (s.failures[u.email ?? ""] ?? 0) >= MAX_TRIES,
+    admin: u.id === s.session,
+    pushOn: false,
+  };
+}
+
+function adminPoolRow(s: SampleState, p: SamplePool, now: number): AdminPoolRow {
+  const payout = p.payout && !p.payout.declinedBy ? p.payout : null;
+  return {
+    id: p.id,
+    code: p.code,
+    emoji: p.emoji,
+    name: p.name,
+    type: p.type,
+    status: statusOf(p, now),
+    lifeguard: personOf(s, p.lifeguardId),
+    goal: goalOf(p),
+    raised: raisedOf(p),
+    refunded: p.cancelled ? raisedOf(p) : 0,
+    share: shareOf(p),
+    paidCount: p.divers.filter((d) => d.paid).length,
+    expectedCount: p.expectedCount,
+    approvers: p.approverIds.length,
+    deadline: iso(p.deadline),
+    createdAt: iso(p.createdAt),
+    payout: payout
+      ? {
+          approvals: payout.approvals.filter((a) => a.status === "approved" && a.at !== null && a.at <= now).length,
+          needed: neededOf(p),
+          paidAt: payout.paidAt ? iso(payout.paidAt) : null,
+        }
+      : null,
+  };
+}
+
+function adminMoney(s: SampleState, scope: { poolId?: string; userId?: string } = {}) {
+  const pools = s.pools.filter((p) => !scope.poolId || p.id === scope.poolId);
+  const newest = <T,>(at: (x: T) => string) => (a: T, b: T) => at(b).localeCompare(at(a));
+  const payouts: AdminPayout[] = pools
+    .filter((p) => p.payout?.paidAt && (!scope.userId || p.lifeguardId === scope.userId))
+    .map((p) => {
+      const gross = raisedOf(p);
+      const fee = feeOf(gross, FEE_BPS);
+      return {
+        id: `payout-${p.id}`,
+        pool: poolRef(p),
+        lifeguard: personOf(s, p.lifeguardId),
+        gross,
+        fee,
+        net: roundUsdc(gross - fee),
+        reference: p.payout?.reference ?? null,
+        destination: p.payout?.destination ?? "wallet",
+        paidAt: iso(p.payout?.paidAt ?? p.deadline),
+        txHash: hashOf(`payout-${p.id}`),
+      };
+    });
+  const refunds: AdminRefund[] = pools
+    .filter((p) => p.cancelled)
+    .flatMap((p) =>
+      p.divers
+        .filter((d) => d.paid && (!scope.userId || d.userId === scope.userId))
+        .map((d) => ({
+          id: `refund-${p.id}-${d.id}`,
+          pool: poolRef(p),
+          user: d.userId ? personOf(s, d.userId) : null,
+          wallet: d.userId ? s.users[d.userId]?.walletAddress ?? address(d.id) : address(d.id),
+          amount: d.amount,
+          txHash: hashOf(`refund-${p.id}-${d.id}`),
+          at: iso(p.deadline),
+        })),
+    );
+  const contributions: AdminContribution[] = pools.flatMap((p) =>
+    p.divers
+      .filter((d) => d.paid && d.paidAt && (!scope.userId || d.userId === scope.userId))
+      .map((d) => ({
+        id: `payment-${d.id}`,
+        pool: poolRef(p),
+        user: diverPerson(s, d),
+        amount: d.amount,
+        receiptRef: d.receiptRef,
+        txHash: hashOf(`payment-${d.id}`),
+        at: d.paidAt ?? iso(p.createdAt),
+      })),
+  );
+  const deposits: AdminDeposit[] = scope.poolId
+    ? []
+    : Object.values(s.users)
+        .filter((u) => !scope.userId || u.id === scope.userId)
+        .flatMap((u) =>
+          u.transactions
+            .filter((t) => t.kind === "deposit")
+            .map((t) => ({ id: `deposit-${u.id}-${t.id}`, user: personOf(s, u.id), amount: t.amount, provider: "testnet-treasury", txHash: t.txHash ?? hashOf(`deposit-${t.id}`), at: t.at })),
+        );
+  return {
+    payouts: payouts.sort(newest((x) => x.paidAt)).slice(0, 100),
+    refunds: refunds.sort(newest((x) => x.at)).slice(0, 100),
+    contributions: contributions.sort(newest((x) => x.at)).slice(0, 100),
+    deposits: deposits.sort(newest((x) => x.at)).slice(0, 100),
+  };
+}
+
+function adminLogFor(s: SampleState, kind: AdminAction["target"]["kind"], id: string): AdminAction[] {
+  return adminState(s).log.filter((a) => a.target.kind === kind && a.target.id === id);
+}
+
+function logAction(s: SampleState, action: AdminAction["action"], target: AdminAction["target"], reason: string | null, details: Record<string, unknown> = {}) {
+  const u = me(s);
+  adminState(s).log.unshift({ id: `log-${s.nextId++}`, admin: { id: u.id, email: u.email ?? "" }, action, target, reason, details, at: iso(Date.now()) });
+}
+
+function adminUserDetail(s: SampleState, id: string): AdminUserDetail {
+  const u = s.users[id];
+  if (!u) throw new ApiError("user_not_found", "No PoolFi user has that id.");
+  const now = Date.now();
+  const money = adminMoney(s, { userId: id });
+  const suspended = adminState(s).suspended[id];
+  const active = !adminState(s).inactive[id];
+  return {
+    ...adminUserRow(s, u, now),
+    chain: SAMPLE_CHAIN,
+    suspendedAt: suspended ? iso(suspended.at) : null,
+    suspendedReason: suspended?.reason ?? null,
+    signInFailures: s.failures[u.email ?? ""] ?? 0,
+    sessions: id === s.session ? 1 : 0,
+    balance: active ? u.balance : null,
+    activationTx: active ? hashOf(`activate-${id}`) : null,
+    poolList: s.pools.filter((p) => roleOf(p, id)).map((p) => adminPoolRow(s, p, now)),
+    contributionList: money.contributions,
+    depositList: money.deposits,
+    refundList: money.refunds,
+    payoutList: money.payouts,
+    log: adminLogFor(s, "user", id),
+  };
+}
+
+function adminPoolDetail(s: SampleState, p: SamplePool): AdminPoolDetail {
+  const now = Date.now();
+  const status = statusOf(p, now);
+  const money = adminMoney(s, { poolId: p.id });
+  const raised = raisedOf(p);
+  const paid = p.divers.filter((d) => d.paid);
+  type Tx = AdminPoolDetail["transactions"][number];
+  const txOf = (kind: Tx["kind"], user: AdminPerson | null, amount: number | null, at: number, seed: string): Tx => ({ hash: hashOf(`${p.id}-${seed}`), kind, user, amount, at: iso(at) });
+  const transactions = [
+    txOf("created", personOf(s, p.lifeguardId), goalOf(p), p.createdAt, "created"),
+    ...paid.flatMap((d) => {
+      const at = d.paidAt ? Date.parse(d.paidAt) : p.createdAt;
+      return [txOf("joined", diverPerson(s, d), null, at, `join-${d.id}`), txOf("contributed", diverPerson(s, d), d.amount, at, `pay-${d.id}`)];
+    }),
+    ...(p.payout?.paidAt ? [txOf("paid_out", personOf(s, p.lifeguardId), roundUsdc(raised - feeOf(raised, FEE_BPS)), p.payout.paidAt, "paid")] : []),
+    ...money.refunds.map((r) => ({ hash: r.txHash, kind: "refunded" as const, user: r.user, amount: r.amount, at: r.at })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+  return {
+    ...adminPoolRow(s, p, now),
+    chain: SAMPLE_CHAIN,
+    description: p.description,
+    chainPoolId: String(s.pools.indexOf(p) + 1),
+    ledger: {
+      status: status === "paidout" ? "settled" : status === "refunded" ? "refunded" : status === "missed" ? "expired" : status === "active" ? "open" : "funded",
+      goal: goalOf(p),
+      contributed: raised,
+      refunded: p.cancelled ? raised : 0,
+      members: paid.length,
+      deadline: iso(p.deadline),
+    },
+    feeBps: FEE_BPS,
+    feeCovered: p.feeCovered,
+    settings: { pickYourName: p.pickYourName, allowNotOnList: p.allowNotOnList, diversCanShare: p.diversCanShare, diversSeePayments: Boolean(p.diversSeePayments) },
+    missedNotifiedAt: status === "missed" ? iso(p.deadline) : null,
+    refundChosenAt: p.cancelled ? iso(p.deadline) : null,
+    refundsFinishedAt: p.cancelled ? iso(p.deadline + HOUR) : null,
+    divers: p.divers,
+    approverList: p.approverIds.map((id) => {
+      const vote = p.payout?.approvals.find((a) => a.userId === id && a.at !== null && a.at <= now)?.status;
+      return { user: personOf(s, id), vote: vote === "approved" || vote === "declined" ? vote : null };
+    }),
+    contributionList: money.contributions,
+    payoutList: money.payouts,
+    refundList: money.refunds,
+    activity: p.activity,
+    transactions,
+    log: adminLogFor(s, "pool", p.id),
+  };
+}
+
+/** A sample activity line read by the team: "You…" becomes the person's name. */
+function forTeam(a: ActivityItem): string {
+  return a.actorName && a.title.startsWith("You ") ? `${a.actorName} ${a.title.slice(4)}` : a.title;
+}
+
+export const sampleAdminApi: AdminApi = {
+  overview: () =>
+    respond(() => {
+      const s = load();
+      me(s);
+      tick(s);
+      const now = Date.now();
+      const users = Object.values(s.users).map((u) => adminUserRow(s, u, now));
+      const pools = s.pools.map((p) => adminPoolRow(s, p, now));
+      const money = adminMoney(s);
+      const sum = (values: number[]) => roundUsdc(values.reduce((a, b) => a + b, 0));
+      const timeline = s.pools.flatMap((p) => p.divers.filter((d) => d.paid && d.paidAt).map((d) => ({ at: Date.parse(d.paidAt ?? ""), amount: d.amount, pool: p, diver: d })));
+      const today = new Date(now);
+      today.setHours(0, 0, 0, 0);
+      const growth = Array.from({ length: 30 }, (_, i) => {
+        const start = today.getTime() - (29 - i) * DAY;
+        const end = start + DAY;
+        return {
+          day: new Date(start).toLocaleDateString("en-CA"),
+          signups: users.filter((u) => Date.parse(u.joinedAt) >= start && Date.parse(u.joinedAt) < end).length,
+          users: users.filter((u) => Date.parse(u.joinedAt) < end).length,
+          collected: sum(timeline.filter((t) => t.at >= start && t.at < end).map((t) => t.amount)),
+        };
+      });
+      const events: AdminEvent[] = [
+        // Payments come from the lists below, so their activity lines aren't repeated.
+        ...s.pools.flatMap((p) => p.activity.filter((a) => a.kind !== "payment").map((a) => ({ id: `a:${a.id}`, kind: a.kind, title: forTeam(a), at: a.at, amount: a.amount, poolId: p.id, userId: null }))),
+        ...timeline.map((t) => ({ id: `p:${t.diver.id}`, kind: "payment" as const, title: `${t.diver.name} paid into ${t.pool.name}`, at: iso(t.at), amount: t.amount, poolId: t.pool.id, userId: t.diver.userId })),
+        ...money.deposits.map((d) => ({ id: `d:${d.id}`, kind: "deposit" as const, title: `${d.user.name} added USDC to their wallet`, at: d.at, amount: d.amount, poolId: null, userId: d.user.id })),
+        ...users.map((u) => ({ id: `u:${u.id}`, kind: "signup" as const, title: `${u.name} signed up`, at: u.joinedAt, amount: null, poolId: null, userId: u.id })),
+        ...adminState(s).log.map((a) => ({ id: `x:${a.id}`, kind: "admin" as const, title: `${a.admin.email} ${actionSentence(a.action, a.target.label)}`, at: a.at, amount: null, poolId: a.target.kind === "pool" ? a.target.id : null, userId: a.target.kind === "user" ? a.target.id : null })),
+      ]
+        .filter((e) => Date.parse(e.at) <= now)
+        .sort((a, b) => b.at.localeCompare(a.at))
+        .slice(0, 60);
+      const open = ["active", "met", "approval"];
+      const week = now - 7 * DAY;
+      return {
+        generatedAt: iso(now),
+        chain: SAMPLE_CHAIN,
+        kpis: {
+          users: users.length,
+          usersNew7d: users.filter((u) => Date.parse(u.joinedAt) > week).length,
+          activeUsers7d: users.filter((u) => u.state === "active").length,
+          pools: pools.length,
+          poolsOpen: pools.filter((p) => open.includes(p.status)).length,
+          collected: sum(pools.map((p) => p.raised)),
+          payments: timeline.length,
+          deposited: sum(money.deposits.map((d) => d.amount)),
+          deposits: money.deposits.length,
+          inPools: sum(pools.filter((p) => [...open, "missed"].includes(p.status)).map((p) => p.raised)),
+          paidOut: sum(money.payouts.map((p) => p.net)),
+          payouts: money.payouts.length,
+          fees: sum(money.payouts.map((p) => p.fee)),
+          refunded: sum(money.refunds.map((r) => r.amount)),
+          owed: 0,
+        },
+        attention: {
+          refunds: 0,
+          wallets: Object.keys(adminState(s).inactive).length,
+          poolsMissed: pools.filter((p) => p.status === "missed").length,
+          payoutsAwaitingApproval: pools.filter((p) => p.status === "approval").length,
+          lockedAccounts: users.filter((u) => u.locked).length,
+        },
+        friction: {
+          signInFailures: Object.values(s.failures).filter((f) => f > 0).length,
+          codesSent: 0,
+          codesUsed: 0,
+          signedUpOnly: users.filter((u) => u.state === "new").length,
+          walletsNeverFunded: users.filter((u) => u.deposited === 0).length,
+          pushOn: 0,
+        },
+        growth,
+        events,
+      };
+    }, 400),
+
+  users: (filter, q) =>
+    respond(() => {
+      const s = load();
+      me(s);
+      const now = Date.now();
+      const text = q.trim().toLowerCase();
+      const users = Object.values(s.users)
+        .map((u) => adminUserRow(s, u, now))
+        .filter((u) => filter === "all" || (filter === "suspended" ? u.suspended : filter === "locked" ? u.locked : u.state === filter))
+        .filter((u) => !text || [u.name, u.email, u.phone, u.id, u.wallet?.address].join(" ").toLowerCase().includes(text))
+        .sort((a, b) => (b.lastSeenAt ?? b.joinedAt).localeCompare(a.lastSeenAt ?? a.joinedAt));
+      return { users, total: users.length };
+    }),
+
+  user: (id) => respond(() => adminUserDetail(load(), id)),
+
+  suspend: (id, reason) =>
+    respond(() => {
+      const s = load();
+      if (id === me(s).id) throw new ApiError("cannot_suspend_self", "You can't suspend your own account.");
+      adminState(s).suspended[id] = { at: Date.now(), reason };
+      logAction(s, "suspend_user", { kind: "user", id, label: personOf(s, id).name }, reason);
+      return adminUserDetail(s, id);
+    }),
+
+  unsuspend: (id) =>
+    respond(() => {
+      const s = load();
+      const a = adminState(s);
+      if (!a.suspended[id]) throw new ApiError("not_suspended", "This account isn't suspended.");
+      delete a.suspended[id];
+      logAction(s, "unsuspend_user", { kind: "user", id, label: personOf(s, id).name }, null);
+      return adminUserDetail(s, id);
+    }),
+
+  unlock: (id) =>
+    respond(() => {
+      const s = load();
+      const u = s.users[id];
+      if (u?.email) s.failures[u.email] = 0;
+      logAction(s, "unlock_user", { kind: "user", id, label: personOf(s, id).name }, null);
+      return adminUserDetail(s, id);
+    }),
+
+  signOut: (id) =>
+    respond(() => {
+      const s = load();
+      logAction(s, "sign_out_user", { kind: "user", id, label: personOf(s, id).name }, null);
+      return adminUserDetail(s, id);
+    }),
+
+  activateWallet: (id) =>
+    respond(() => {
+      const s = load();
+      me(s);
+      if (!s.users[id]) throw new ApiError("user_not_found", "No PoolFi user has that id.");
+      delete adminState(s).inactive[id];
+      logAction(s, "activate_wallet", { kind: "user", id, label: personOf(s, id).name }, null, { address: s.users[id].walletAddress });
+      return adminUserDetail(s, id);
+    }, 1200),
+
+  pools: (status, q) =>
+    respond(() => {
+      const s = load();
+      me(s);
+      tick(s);
+      const now = Date.now();
+      const text = q.trim().toLowerCase();
+      const pools = s.pools
+        .map((p) => adminPoolRow(s, p, now))
+        .filter((p) => status === "all" || p.status === status)
+        .filter((p) => !text || [p.name, p.code, p.lifeguard.name, p.lifeguard.email].join(" ").toLowerCase().includes(text))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return { pools, total: pools.length };
+    }),
+
+  pool: (id) =>
+    respond(() => {
+      const s = load();
+      me(s);
+      return adminPoolDetail(s, findPool(s, id));
+    }),
+
+  extendPool: (id, deadline, reason) =>
+    respond(() => {
+      const s = load();
+      me(s);
+      const p = findPool(s, id);
+      const status = statusOf(p, Date.now());
+      if (status === "paidout") throw new ApiError("already_paid_out", "This pool has already been paid out.");
+      if (status === "refunded") throw new ApiError("pool_refunded", "This pool's divers have been refunded.");
+      if (status === "met" || status === "approval") throw new ApiError("goal_met", "This pool has reached its goal. Request the payout instead.");
+      const at = new Date(deadline).getTime();
+      if (!(at >= Date.now() + MINUTE)) throw new ApiError("invalid_deadline", "The new deadline must be at least a minute from now.");
+      if (at <= p.deadline) throw new ApiError("invalid_deadline", "Pick a date after the current deadline.");
+      const from = iso(p.deadline);
+      p.deadline = at;
+      p.activity.unshift(activity(p.id, "extended", `PoolFi extended the deadline for ${p.name}`, Date.now(), null, "PoolFi"));
+      logAction(s, "extend_pool", { kind: "pool", id, label: p.name }, reason || null, { from, to: iso(at) });
+      return adminPoolDetail(s, p);
+    }, 900),
+
+  closePool: (id, reason) =>
+    respond(() => {
+      const s = load();
+      me(s);
+      const p = findPool(s, id);
+      const now = Date.now();
+      if (statusOf(p, now) === "paidout") throw new ApiError("already_paid_out", "This pool has already been paid out.");
+      if (!p.cancelled) {
+        p.cancelled = true;
+        if (p.payout && !p.payout.paidAt) p.payout.declinedBy = { name: "PoolFi", reason: "PoolFi closed the pool" };
+        p.activity.unshift(activity(p.id, "refund", `PoolFi closed ${p.name}, so everyone who paid gets their USDC back`, now, raisedOf(p)));
+      }
+      refundIfNeeded(s, p, now);
+      logAction(s, "close_pool", { kind: "pool", id, label: p.name }, reason);
+      return adminPoolDetail(s, p);
+    }, 1200),
+
+  retryRefunds: (id) =>
+    respond(() => {
+      const s = load();
+      me(s);
+      const p = findPool(s, id);
+      if (!p.cancelled) throw new ApiError("not_refunding", "This pool isn't being refunded.");
+      refundIfNeeded(s, p, Date.now());
+      logAction(s, "retry_refunds", { kind: "pool", id, label: p.name }, null);
+      return adminPoolDetail(s, p);
+    }, 900),
+
+  money: () =>
+    respond(() => {
+      const s = load();
+      me(s);
+      tick(s);
+      const inactive = adminState(s).inactive;
+      return {
+        chain: SAMPLE_CHAIN,
+        refunding: [],
+        wallets: Object.keys(inactive)
+          .filter((id) => s.users[id])
+          .map((id) => ({ user: personOf(s, id), address: s.users[id].walletAddress, createdAt: iso(joinedAt(s, s.users[id], Date.now())) })),
+        ...adminMoney(s),
+      };
+    }),
+
+  runRefundJob: () =>
+    respond(() => {
+      const s = load();
+      me(s);
+      tick(s);
+      const run = { poolsChecked: s.pools.filter((p) => p.deadline <= Date.now()).length, lifeguardsAsked: 0, refunds: 0, failures: 0, poolsFinished: 0 };
+      logAction(s, "run_refund_job", { kind: "job", id: null, label: null }, null, { ...run });
+      return run;
+    }, 900),
+
+  log: () =>
+    respond(() => {
+      const s = load();
+      me(s);
+      return adminState(s).log;
+    }),
 };

@@ -8,6 +8,7 @@ import type {
   CreatePoolInput,
   HomeSummary,
   InviteView,
+  Me,
   NotificationsView,
   NewDiver,
   PaymentResult,
@@ -15,14 +16,14 @@ import type {
   PoolRecord,
   PoolSummary,
   Receipt,
-  User,
   Wallet,
 } from "./types";
 
 /** Everything the screens ask of the backend. */
 export interface PoolFiApi {
   // Sign-in: a password, then a 6-digit code PoolFi emails
-  getSession(): Promise<User | null>;
+  /** The signed-in person, with whether they're on the PoolFi team (the admin dashboard). */
+  getSession(): Promise<Me | null>;
   /** Creates the account, then emails a code to confirm the email address. */
   signUp(email: string, password: string): Promise<void>;
   /**
@@ -42,7 +43,7 @@ export interface PoolFiApi {
   recoveryReady(): Promise<boolean>;
   /** On the page that link opens: sets the new password. Then everyone signs in again. */
   setNewPassword(password: string): Promise<void>;
-  saveProfile(profile: { firstName: string; lastName: string; avatar: Avatar }): Promise<User>;
+  saveProfile(profile: { firstName: string; lastName: string; avatar: Avatar }): Promise<Me>;
   /** Tells the server the person is active, so their session isn't closed as idle. */
   keepAlive(): Promise<void>;
   /** The Me screen: on-time streak, badges and preferences. */

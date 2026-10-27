@@ -50,12 +50,14 @@ The server understands both error numberings, and both ways a contract reports a
 ├── server                        HTTP API (Node.js, TypeScript)
 │   ├── src
 │   │   ├── app-routes.ts         the web app's endpoints (/v1/app)
+│   │   ├── admin-routes.ts       the admin dashboard's endpoints (/v1/admin)
 │   │   ├── api-types.ts          what those endpoints return, shared with web/
 │   │   ├── services/app/         pools, payouts, invites, home, wallet, receipts
+│   │   ├── services/admin.ts     the admin dashboard: what it shows, and the team's fixes
 │   │   └── email/                emails (Resend) and their wording
 │   ├── migrations                database schema
 │   └── test                      unit and testnet end-to-end tests
-├── web                           web app (Next.js); also serves the API at /api
+├── web                           web app (Next.js); also serves the API at /api, and the admin dashboard at /admin
 ├── .github/workflows/refunds.yml runs the refund job every 10 minutes
 ├── docs
 │   └── contract-plan.md
@@ -179,7 +181,7 @@ The screens in `web/` use `/v1/app`, shaped as `server/src/api-types.ts` describ
 
 | Method | Path | Does |
 |---|---|---|
-| GET | `/v1/app/me` | The signed-in user (wallet made on first visit) |
+| GET | `/v1/app/me` | The signed-in user (wallet made on first visit), with `admin: true` for the team (`ADMIN_EMAILS`) |
 | PUT | `/v1/app/me/profile` | `{ firstName, lastName, avatar }` |
 | GET | `/v1/app/home` | Balance, alerts, the user's pools and recent activity |
 | GET | `/v1/app/pools` | Every pool the user leads, approves or paid into |
@@ -250,6 +252,33 @@ The messages are in `server/src/email/messages.ts`. Sign-in codes are sent by Su
 
   Divers can't take their money out while they wait for the lifeguard. The job runs inside the server every `REFUND_JOB_INTERVAL_SECONDS` (default 300), or once with `npm run refunds` from an external scheduler. Only one server runs it at a time, and nobody is refunded twice.
 
+### The admin dashboard
+
+`/admin` ("PoolFi Pulse") is for the PoolFi team: everyone, every pool and all the USDC, and the fixes the refund job can't make on its own. Team members sign in like everyone else (password, then the emailed code); the server lets in only addresses listed in `ADMIN_EMAILS` (comma-separated, any case). Team members see **Admin** in the sidebar, and **Admin dashboard** in Settings on phones. Without `ADMIN_EMAILS`, nobody can open it.
+
+| Page | Shows | Can do |
+|---|---|---|
+| Overview | People, pools and USDC at a glance; what needs a look; growth over 30 days; where people get stuck; everything happening, live | Run the refund job now |
+| People | Everyone, searchable; active, quiet, did nothing yet, suspended, locked. Each person's wallet (with its USDC on Stellar), pools, payments, deposits, payouts, refunds and signed-in devices | Suspend (signed out at once, can't sign in until lifted), lift a suspension, unlock after wrong passwords, sign out everywhere, put a wallet on Stellar that didn't make it |
+| Pools | Every pool by status, searchable. Each pool's people (with contacts), payments, payout, refunds, approvers' votes, activity, what the contract says, and every transaction with a link to stellar.expert | Give it more time, close it and refund everyone who paid (both signed with the lifeguard's wallet), send the refunds left |
+| Money | Pools still refunding, wallets not on Stellar, and the latest payouts, refunds, payments and deposits | Send a pool's refunds left; put a wallet on Stellar |
+| Admin log | Everything the team did: who, to what, when and why | Read only |
+
+Money still moves only by the contract's rules: the team acts through the lifeguard's own wallet (which the backend holds), and refunds go through the refund job's code, so nobody is refunded twice. Team members can't suspend themselves or each other. Every fix is written to the `admin_actions` table (migration `009_admin.sql`).
+
+| Method | Path | Does |
+|---|---|---|
+| GET | `/v1/admin/overview` | Totals, what needs a look, growth, friction, the activity feed |
+| GET | `/v1/admin/users?filter=&q=`, `/v1/admin/users/:id` | People (`all`, `active`, `quiet`, `new`, `suspended`, `locked`); one person |
+| POST | `/v1/admin/users/:id/suspend`, `/unsuspend`, `/unlock`, `/sign-out`, `/wallet/activate` | `{ reason }` to suspend |
+| GET | `/v1/admin/pools?status=&q=`, `/v1/admin/pools/:id` | Pools by status; one pool with its transactions |
+| POST | `/v1/admin/pools/:id/extend`, `/close`, `/refunds/retry` | `{ deadline, reason? }`; `{ reason }`; nothing |
+| GET | `/v1/admin/money` | Pools refunding, wallets not on Stellar, payouts, refunds, payments, deposits |
+| POST | `/v1/admin/jobs/refunds` | One pass of the refund job |
+| GET | `/v1/admin/log` | The admin log |
+
+Anyone else gets `403 not_admin`. A suspended person gets `403 account_suspended` from the app and from the sign-in code step.
+
 ### Running it
 
 Requires Node.js 22 or newer and PostgreSQL. The server and the web app are npm workspaces, installed together from the repository root:
@@ -271,6 +300,8 @@ For `npm run dev`, link the server's settings into the web app once: `ln -s ../s
 npm test                              # unit tests
 npm --workspace server run test:e2e   # the flows and escrow on Stellar testnet through the API (about 7 minutes)
 ```
+
+`admin.test.ts` checks the admin dashboard: only the team gets in; what it shows; extending and closing a pool with the lifeguard's wallet; suspending, unlocking and signing out an account; putting a wallet on Stellar; the admin log.
 
 `missed-deadline.test.ts` waits out a short deadline: the lifeguard is asked (and nobody is refunded), extends it, divers pay again, and when the new deadline passes too the lifeguard refunds everyone.
 
@@ -323,6 +354,7 @@ Migration `004_lock_tables.sql` closes PoolFi's tables to Supabase's public Data
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Device notifications (Web Push). Generate once with `npx web-push generate-vapid-keys`, and never change them: every device would have to turn notifications on again. Subject: `mailto:` an address you read |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Your Resend key, and the sender on your Resend-verified domain, e.g. `PoolFi <noreply@thepoolfi.com>`. Optional: `EMAIL_REPLY_TO`, and `EMAIL_TIME_ZONE` (default `Africa/Lagos`) |
 | `APP_URL` | Optional: the site's address for links in reminders, e.g. `https://thepoolfi.com` (defaults to the Vercel production domain) |
+| `ADMIN_EMAILS` | The PoolFi team's emails, comma-separated: they can open the admin dashboard (`/admin`) |
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | From Supabase. Setting these switches the app from sample data to the real backend |
 
 `NEXT_PUBLIC_` values are built into the page, so redeploy after changing them.

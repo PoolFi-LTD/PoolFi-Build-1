@@ -83,7 +83,7 @@ interface VoteRow {
   at: Date;
 }
 
-interface ActivityRow {
+export interface ActivityRow {
   id: string;
   pool_id: string;
   pool_name: string;
@@ -91,7 +91,7 @@ interface ActivityRow {
   actor_user_id: string | null;
   actor_name: string | null;
   amount: string | null;
-  data: { count?: number; vote?: "approved" | "declined"; reason?: string; deadline?: string };
+  data: { count?: number; vote?: "approved" | "declined"; reason?: string; deadline?: string; closedBy?: "poolfi" };
   at: Date;
 }
 
@@ -479,7 +479,7 @@ export function toDiver(row: DiverRow, withContact: boolean): Diver {
 }
 
 /** The activity line as `viewerId` reads it: "You paid…" for them, "Ada paid…" for everyone else. */
-function activityTitle(row: ActivityRow, viewerId: string | null): string {
+export function activityTitle(row: ActivityRow, viewerId: string | null): string {
   const you = viewerId !== null && row.actor_user_id === viewerId;
   const who = you ? "You" : (row.actor_name ?? "Someone");
   const pool = row.pool_name;
@@ -499,7 +499,9 @@ function activityTitle(row: ActivityRow, viewerId: string | null): string {
     case "payout":
       return `${pool} paid out to ${you ? "you" : who}`;
     case "refund":
-      return `${pool} missed its goal, so everyone who paid got their USDC back`;
+      return row.data.closedBy === "poolfi"
+        ? `PoolFi closed ${pool}, so everyone who paid gets their USDC back`
+        : `${pool} missed its goal, so everyone who paid got their USDC back`;
     case "missed":
       return `${pool} reached its deadline before its goal`;
     case "extended":

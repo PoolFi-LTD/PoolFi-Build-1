@@ -3,10 +3,11 @@
  * everything else from the server at /api/v1/app, signed in with the Supabase session.
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { AdminApi } from "./admin-api";
 import type { PoolFiApi } from "./api";
 import { ApiError } from "./errors";
 import { SESSION_EXPIRED_EVENT } from "./idle";
-import type { Receipt, User } from "./types";
+import type { Me, Receipt } from "./types";
 
 let supabaseClient: SupabaseClient | null = null;
 
@@ -149,10 +150,15 @@ export const httpApi: PoolFiApi = {
   async getSession() {
     if (!(await accessToken())) return null;
     try {
-      return await get<User>("/me");
+      return await get<Me>("/me");
     } catch (error) {
       // Signed in with a password but the emailed code isn't confirmed yet: not in.
       if (error instanceof ApiError && error.code === "verification_required") return null;
+      // Suspended by the PoolFi team: signed out here; signing in again says why.
+      if (error instanceof ApiError && error.code === "account_suspended") {
+        await supabase().auth.signOut({ scope: "local" });
+        return null;
+      }
       // A session the server no longer accepts (or closed as idle) counts as signed out.
       if (error instanceof ApiError && error.code === "session_expired") return null;
       if (error instanceof ApiError && error.code === "unauthenticated") {
@@ -195,14 +201,16 @@ export const httpApi: PoolFiApi = {
     try {
       await auth("/code");
     } catch (e) {
-      if (e instanceof ApiError && e.code === "account_locked") await supabase().auth.signOut({ scope: "local" });
+      if (e instanceof ApiError && (e.code === "account_locked" || e.code === "account_suspended")) {
+        await supabase().auth.signOut({ scope: "local" });
+      }
       throw e;
     }
   },
 
   async verifyCode(code) {
     await auth("/code/verify", { code });
-    const user = await get<User>("/me");
+    const user = await get<Me>("/me");
     return { needsProfile: !user.firstName };
   },
 
@@ -241,7 +249,7 @@ export const httpApi: PoolFiApi = {
     await supabase().auth.signOut({ scope: "global" });
   },
 
-  saveProfile: (profile) => request<User>("PUT", "/me/profile", profile),
+  saveProfile: (profile) => request<Me>("PUT", "/me/profile", profile),
   getAchievements: () => get("/me/achievements"),
   savePreferences: (preferences) => request("PUT", "/me/preferences", preferences),
 
@@ -300,4 +308,31 @@ export const httpApi: PoolFiApi = {
       throw error;
     }
   },
+};
+
+/** The admin dashboard's calls (/api/v1/admin); the server turns away anyone not on ADMIN_EMAILS. */
+const admin = <T>(method: "GET" | "POST", path: string, body?: unknown) => request<T>(method, `/api/v1/admin${path}`, body);
+const id = (value: string) => encodeURIComponent(value);
+
+export const httpAdminApi: AdminApi = {
+  overview: () => admin("GET", "/overview"),
+
+  users: (filter, q) => admin("GET", `/users?${new URLSearchParams({ filter, q })}`),
+  user: (userId) => admin("GET", `/users/${id(userId)}`),
+  suspend: (userId, reason) => admin("POST", `/users/${id(userId)}/suspend`, { reason }),
+  unsuspend: (userId) => admin("POST", `/users/${id(userId)}/unsuspend`),
+  unlock: (userId) => admin("POST", `/users/${id(userId)}/unlock`),
+  signOut: (userId) => admin("POST", `/users/${id(userId)}/sign-out`),
+  activateWallet: (userId) => admin("POST", `/users/${id(userId)}/wallet/activate`),
+
+  pools: (status, q) => admin("GET", `/pools?${new URLSearchParams({ status, q })}`),
+  pool: (poolId) => admin("GET", `/pools/${id(poolId)}`),
+  extendPool: (poolId, deadline, reason) => admin("POST", `/pools/${id(poolId)}/extend`, { deadline, reason }),
+  closePool: (poolId, reason) => admin("POST", `/pools/${id(poolId)}/close`, { reason }),
+  retryRefunds: (poolId) => admin("POST", `/pools/${id(poolId)}/refunds/retry`),
+
+  money: () => admin("GET", "/money"),
+  runRefundJob: () => admin("POST", "/jobs/refunds"),
+
+  log: () => admin("GET", "/log"),
 };

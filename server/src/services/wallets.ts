@@ -47,6 +47,12 @@ export class Wallets {
     return toWallet(row);
   }
 
+  /** Activates a user's wallet on Stellar if an earlier try didn't finish (admin dashboard). */
+  async activateFor(userId: string): Promise<Wallet> {
+    const row = (await this.find(userId)) ?? (await this.create(userId));
+    return toWallet(row.activated_at ? row : await this.activate(userId));
+  }
+
   /** The user's wallet keypair, for signing on their behalf. */
   async keypair(userId: string): Promise<Keypair> {
     const row = await this.find(userId);

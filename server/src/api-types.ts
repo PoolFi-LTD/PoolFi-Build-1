@@ -293,3 +293,310 @@ export interface PaymentResult {
   poolId: string;
   badges: string[];
 }
+
+// The admin dashboard (/v1/admin): for the PoolFi team only (ADMIN_EMAILS).
+
+/** The signed-in user, with whether they can open the admin dashboard. */
+export interface Me extends User {
+  admin: boolean;
+}
+
+export interface AdminPerson {
+  id: string;
+  name: string;
+  email: string | null;
+}
+
+/**
+ * How a user is doing. active: used PoolFi in the last 7 days · quiet: not lately ·
+ * new: signed up but hasn't created, joined or paid into a pool yet.
+ */
+export type AdminUserState = "active" | "quiet" | "new";
+
+/** Where the money is held, and where to look its transactions up (null: a local network). */
+export interface AdminChain {
+  network: string;
+  poolContractId: string;
+  explorer: string | null;
+}
+
+/** Everything the dashboard's front page shows. */
+export interface AdminOverview {
+  generatedAt: string;
+  chain: AdminChain;
+  kpis: {
+    users: number;
+    usersNew7d: number;
+    activeUsers7d: number;
+    pools: number;
+    poolsOpen: number;
+    /** Every share paid into a pool, ever. */
+    collected: Usdc;
+    payments: number;
+    /** USDC added to wallets. */
+    deposited: Usdc;
+    deposits: number;
+    /** In pools that haven't paid out or been refunded yet. */
+    inPools: Usdc;
+    /** What lifeguards were paid, after PoolFi's fee. */
+    paidOut: Usdc;
+    payouts: number;
+    fees: Usdc;
+    refunded: Usdc;
+    /** Still to go back to people in pools being refunded. */
+    owed: Usdc;
+  };
+  /** Things the team should look at; each is a count of items on the Money, Pools or People page. */
+  attention: {
+    refunds: number;
+    wallets: number;
+    poolsMissed: number;
+    payoutsAwaitingApproval: number;
+    lockedAccounts: number;
+  };
+  /** Where people get stuck, over the last 7 days unless said otherwise. */
+  friction: {
+    signInFailures: number;
+    codesSent: number;
+    codesUsed: number;
+    /** All time: signed up, never created, joined or paid into a pool. */
+    signedUpOnly: number;
+    /** All time: a wallet that never had USDC added. */
+    walletsNeverFunded: number;
+    pushOn: number;
+  };
+  /** Day by day for the last 30 days, in Lagos time. */
+  growth: { day: string; signups: number; users: number; collected: Usdc }[];
+  events: AdminEvent[];
+}
+
+/** One line in the dashboard's activity feed. */
+export interface AdminEvent {
+  id: string;
+  kind: ActivityItem["kind"] | "signup" | "deposit" | "admin";
+  title: string;
+  at: string;
+  amount: Usdc | null;
+  poolId: string | null;
+  userId: string | null;
+}
+
+export interface AdminWalletInfo {
+  address: string;
+  /** On Stellar with a USDC trustline. */
+  activated: boolean;
+}
+
+export interface AdminUserRow {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  avatar: Avatar | null;
+  joinedAt: string;
+  lastSeenAt: string | null;
+  state: AdminUserState;
+  /** Pools they're in, as lifeguard, approver or diver. */
+  pools: number;
+  /** Pools they started. */
+  created: number;
+  paid: Usdc;
+  payments: number;
+  deposited: Usdc;
+  wallet: AdminWalletInfo | null;
+  suspended: boolean;
+  /** Locked after too many wrong passwords. */
+  locked: boolean;
+  admin: boolean;
+  pushOn: boolean;
+}
+
+export interface AdminUserList {
+  users: AdminUserRow[];
+  /** All users matching the search, before the page limit. */
+  total: number;
+}
+
+export type AdminUserFilter = "all" | AdminUserState | "suspended" | "locked";
+
+export interface AdminUserDetail extends AdminUserRow {
+  chain: AdminChain;
+  suspendedAt: string | null;
+  suspendedReason: string | null;
+  /** Wrong passwords in a row. */
+  signInFailures: number;
+  /** Signed-in devices that are still open. */
+  sessions: number;
+  /** The wallet's USDC on Stellar right now; null when it can't hold USDC yet or Stellar didn't answer. */
+  balance: Usdc | null;
+  activationTx: string | null;
+  poolList: AdminPoolRow[];
+  contributionList: AdminContribution[];
+  depositList: AdminDeposit[];
+  refundList: AdminRefund[];
+  payoutList: AdminPayout[];
+  log: AdminAction[];
+}
+
+/**
+ * A pool as the team sees it. The status is worked out from the database, so a list of
+ * every pool needs no contract reads; a pool's own page also shows the contract's.
+ */
+export interface AdminPoolRow {
+  id: string;
+  code: string;
+  emoji: string;
+  name: string;
+  type: PoolType;
+  status: PoolStatus;
+  lifeguard: AdminPerson;
+  goal: Usdc;
+  raised: Usdc;
+  refunded: Usdc;
+  share: Usdc;
+  paidCount: number;
+  expectedCount: number;
+  approvers: number;
+  deadline: string;
+  createdAt: string;
+  /** The latest payout request that wasn't declined. */
+  payout: { approvals: number; needed: number; paidAt: string | null } | null;
+}
+
+export type AdminPoolFilter = "all" | PoolStatus;
+
+export interface AdminPoolList {
+  pools: AdminPoolRow[];
+  /** All pools matching the search, before the page limit. */
+  total: number;
+}
+
+export interface AdminPoolDetail extends AdminPoolRow {
+  chain: AdminChain;
+  description: string | null;
+  chainPoolId: string;
+  /** What the contract holding the money says right now. */
+  ledger: {
+    status: "open" | "funded" | "settled" | "refunded" | "expired";
+    goal: Usdc;
+    contributed: Usdc;
+    refunded: Usdc;
+    members: number;
+    deadline: string;
+  };
+  feeBps: number;
+  feeCovered: boolean;
+  settings: { pickYourName: boolean; allowNotOnList: boolean; diversCanShare: boolean; diversSeePayments: boolean };
+  missedNotifiedAt: string | null;
+  refundChosenAt: string | null;
+  refundsFinishedAt: string | null;
+  divers: Diver[];
+  approverList: { user: AdminPerson; vote: "approved" | "declined" | null }[];
+  contributionList: AdminContribution[];
+  payoutList: AdminPayout[];
+  refundList: AdminRefund[];
+  activity: ActivityItem[];
+  /** Every transaction PoolFi sent the contract for this pool, oldest first. */
+  transactions: { hash: string; kind: "created" | "joined" | "contributed" | "extended" | "payout_requested" | "voted" | "paid_out" | "refunded"; user: AdminPerson | null; amount: Usdc | null; at: string }[];
+  log: AdminAction[];
+}
+
+/** A paid-out pool: what the lifeguard got. */
+export interface AdminPayout {
+  id: string;
+  pool: { id: string; name: string; emoji: string };
+  lifeguard: AdminPerson;
+  gross: Usdc;
+  fee: Usdc;
+  net: Usdc;
+  reference: string | null;
+  destination: "wallet" | "bank";
+  paidAt: string;
+  txHash: string | null;
+}
+
+/** USDC sent back from a cancelled pool. `user` is null for a wallet that isn't a PoolFi wallet. */
+export interface AdminRefund {
+  id: string;
+  pool: { id: string; name: string; emoji: string };
+  user: AdminPerson | null;
+  wallet: string;
+  amount: Usdc;
+  txHash: string;
+  at: string;
+}
+
+export interface AdminContribution {
+  id: string;
+  pool: { id: string; name: string; emoji: string };
+  user: AdminPerson;
+  amount: Usdc;
+  receiptRef: string | null;
+  txHash: string;
+  at: string;
+}
+
+export interface AdminDeposit {
+  id: string;
+  user: AdminPerson;
+  amount: Usdc;
+  /** Where it came from, e.g. the testnet treasury. */
+  provider: string;
+  txHash: string;
+  at: string;
+}
+
+/** A pool being refunded: who still has to get their USDC back. */
+export interface AdminRefundingPool {
+  pool: AdminPoolRow;
+  startedAt: string;
+  /** Contributed but not yet sent back. */
+  owed: Usdc;
+  /** Still unfinished well after it started: the refund job keeps failing. */
+  needsAttention: boolean;
+}
+
+/** A wallet the backend couldn't put on Stellar yet: its owner can't pay or be paid. */
+export interface AdminWalletIssue {
+  user: AdminPerson;
+  address: string;
+  createdAt: string;
+}
+
+export interface AdminMoney {
+  chain: AdminChain;
+  refunding: AdminRefundingPool[];
+  wallets: AdminWalletIssue[];
+  payouts: AdminPayout[];
+  refunds: AdminRefund[];
+  contributions: AdminContribution[];
+  deposits: AdminDeposit[];
+}
+
+export interface AdminAction {
+  id: string;
+  admin: { id: string; email: string };
+  action:
+    | "suspend_user"
+    | "unsuspend_user"
+    | "unlock_user"
+    | "sign_out_user"
+    | "activate_wallet"
+    | "extend_pool"
+    | "close_pool"
+    | "retry_refunds"
+    | "run_refund_job";
+  target: { kind: "user" | "pool" | "job"; id: string | null; label: string | null };
+  reason: string | null;
+  details: Record<string, unknown>;
+  at: string;
+}
+
+/** What one run of the refund job did. */
+export interface AdminJobRun {
+  poolsChecked: number;
+  lifeguardsAsked: number;
+  refunds: number;
+  failures: number;
+  poolsFinished: number;
+}

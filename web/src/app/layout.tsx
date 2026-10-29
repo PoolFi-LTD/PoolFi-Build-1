@@ -15,7 +15,15 @@ export const metadata: Metadata = {
   description: "Group money. Finally fixed. Collect class dues, birthday money and office welfare with one link.",
   // Installed to an iPhone's home screen, PoolFi opens like an app (and can show notifications).
   appleWebApp: { capable: true, title: "PoolFi", statusBarStyle: "default" },
-  icons: { apple: "/apple-touch-icon.png" },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon-32x32.png", type: "image/png", sizes: "32x32" },
+      { url: "/favicon-16x16.png", type: "image/png", sizes: "16x16" },
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {

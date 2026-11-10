@@ -1,0 +1,24 @@
+# Tests on every push and pull request: unit tests (including the guard against
+# Stellar RPC calls that break on protocol upgrades) and type checks. A red ✗ here
+# means don't deploy.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm --workspace server run typecheck
+      - run: npx tsc -p web/tsconfig.json --noEmit

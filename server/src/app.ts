@@ -74,16 +74,37 @@ export async function buildApp({ config, db, chain, mailer, pushSender }: AppDep
     reply.status(404).send({ error: { code: "not_found", message: "No such endpoint." } }),
   );
 
-  app.get("/health", async () => {
-    await db.query("select 1");
-    const health = await chain.rpc.getHealth();
-    return {
-      status: "ok",
+  // For uptime monitors (.github/workflows/health.yml): the database, Stellar RPC, a balance
+  // read and a contract read, which together cover what every screen needs. 503 names
+  // the check that failed, never a secret.
+  app.get("/health", async (request, reply) => {
+    const checks: Record<string, "ok" | string> = {};
+    const run = async <T>(name: string, fn: () => Promise<T>): Promise<T | undefined> => {
+      try {
+        const value = await fn();
+        checks[name] = "ok";
+        return value;
+      } catch (error) {
+        checks[name] = error instanceof Error ? error.message.slice(0, 200) : "failed";
+        request.log.error({ check: name, err: error }, "health check failed");
+        return undefined;
+      }
+    };
+    const [, health] = await Promise.all([
+      run("database", () => db.query("select 1")),
+      run("stellarRpc", () => chain.rpc.getHealth()),
+      run("balanceRead", () => chain.usdcBalance(chain.sponsor.publicKey())),
+      run("contractRead", () => chain.read("token")),
+    ]);
+    const ok = Object.values(checks).every((c) => c === "ok");
+    return reply.status(ok ? 200 : 503).send({
+      status: ok ? "ok" : "degraded",
+      checks,
       network: config.stellar.networkPassphrase,
-      latestLedger: health.latestLedger,
+      latestLedger: health?.latestLedger ?? null,
       poolContractId: chain.poolContractId,
       usdcContractId: chain.usdcContractId,
-    };
+    });
   });
 
   // The signed-in user. Their wallet is created on their first call to any signed-in endpoint.

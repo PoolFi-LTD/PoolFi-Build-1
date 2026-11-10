@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "cd .. && npm ci",
+  "buildCommand": "cd .. && sh scripts/vercel-build.sh",
   "crons": [{ "path": "/api/cron/refunds", "schedule": "0 6 * * *" }]
 }

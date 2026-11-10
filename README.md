@@ -324,7 +324,9 @@ One Vercel project serves the web app and the API: `web/src/app/api/[...path]/ro
 
 ### 2. Tables
 
-Create them before the first deploy, and run it again whenever `server/migrations` gains a file. With `DATABASE_URL` in `server/.env` set to the Supabase session pooler URL:
+Vercel applies new files in `server/migrations` on every deploy, before building (`web/vercel.json` runs `scripts/vercel-build.sh`); a failed migration stops the deploy. Write them by the rules in [server/migrations/README.md](server/migrations/README.md). Preview deployments that share the production database can skip this with `SKIP_MIGRATIONS=1` on the Preview environment.
+
+To run them yourself (e.g. before the first deploy), with `DATABASE_URL` in `server/.env` set to the Supabase session pooler URL:
 
 ```bash
 npm run migrate
@@ -365,7 +367,11 @@ Migration `004_lock_tables.sql` closes PoolFi's tables to Supabase's public Data
 
 ### 5. Check it
 
-`https://<your domain>/api/health` should answer `{"status":"ok", ...}` with the contract ID. Then sign in with an email code, add test USDC in the wallet, create a pool and pay into it from a second account.
+`https://<your domain>/api/health` should answer `{"status":"ok", ...}` with the contract ID. It checks the database, Stellar RPC, a balance read and a contract read, and answers `503` naming the one that failed. `.github/workflows/health.yml` calls it every 10 minutes and fails (GitHub emails you) when it's down; `.github/workflows/ci.yml` runs the tests and type checks on every push. Then sign in with an email code, add test USDC in the wallet, create a pool and pay into it from a second account.
+
+### Stellar protocol upgrades
+
+Each Stellar protocol upgrade can change the XDR of ledger headers before `@stellar/stellar-sdk` catches up. The server only reads the ledger entries it needs (`getLedgerEntries` for accounts and trustlines, `getHealth` for the latest ledger), never whole headers; `test/unit/stellar-rpc-guard.test.ts` fails if a call like `getLatestLedger` or `getAssetBalance` comes back. Before an upgrade reaches testnet or mainnet (announced at https://stellar.org/protocol-upgrades), update `@stellar/stellar-sdk` and run `npm --workspace server run test:e2e`.
 
 ### Moving to the client's contract
 

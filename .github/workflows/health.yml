@@ -1,0 +1,33 @@
+# Every 10 minutes: checks https://app.thepoolfi.com/api/health (database, Stellar RPC,
+# a balance read and a contract read). A failed run means the site is broken for users;
+# GitHub emails a failed scheduled run to whoever last changed this file's schedule,
+# and it shows as a red ✗ under the repository's Actions tab.
+# Uses the POOLFI_URL repository secret (the same one refunds.yml uses).
+name: Health
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check /api/health
+        env:
+          POOLFI_URL: ${{ secrets.POOLFI_URL }}
+        run: |
+          URL="${POOLFI_URL:-https://app.thepoolfi.com}/api/health"
+          # Two tries a minute apart, so one slow cold start doesn't raise an alarm.
+          for attempt in 1 2; do
+            if body=$(curl --fail-with-body --silent --show-error --max-time 60 "$URL"); then
+              echo "$body"
+              exit 0
+            fi
+            echo "Attempt $attempt failed: $body"
+            [ "$attempt" = 1 ] && sleep 60
+          done
+          echo "::error title=PoolFi is down::$URL is failing. Check the 'checks' above for which part."
+          exit 1

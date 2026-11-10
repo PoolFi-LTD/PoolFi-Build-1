@@ -10,6 +10,7 @@
     "dev": "tsx watch --env-file=.env src/server.ts",
     "start": "tsx --env-file=.env src/server.ts",
     "migrate": "tsx --env-file=.env src/scripts/migrate.ts",
+    "migrate:deploy": "tsx src/scripts/migrate.ts",
     "refunds": "tsx --env-file=.env src/scripts/refunds.ts",
     "db:local": "sh scripts/local-db.sh",
     "typecheck": "tsc --noEmit",

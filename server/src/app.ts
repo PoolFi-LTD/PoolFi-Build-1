@@ -76,11 +76,11 @@ export async function buildApp({ config, db, chain, mailer, pushSender }: AppDep
 
   app.get("/health", async () => {
     await db.query("select 1");
-    const ledger = await chain.rpc.getLatestLedger();
+    const health = await chain.rpc.getHealth();
     return {
       status: "ok",
       network: config.stellar.networkPassphrase,
-      latestLedger: ledger.sequence,
+      latestLedger: health.latestLedger,
       poolContractId: chain.poolContractId,
       usdcContractId: chain.usdcContractId,
     };

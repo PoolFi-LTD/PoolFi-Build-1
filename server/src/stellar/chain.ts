@@ -73,8 +73,15 @@ export class Chain {
 
   /** The address's USDC balance in base units, or null if it can't hold USDC (no trustline). */
   async usdcBalance(address: string): Promise<bigint | null> {
-    const { balanceEntry } = await this.rpc.getAssetBalance(address, this.usdc, this.config.networkPassphrase);
-    return balanceEntry ? BigInt(balanceEntry.amount) : null;
+    const key = xdr.LedgerKey.trustline(
+      new xdr.LedgerKeyTrustLine({
+        accountId: Keypair.fromPublicKey(address).xdrAccountId(),
+        asset: this.usdc.toTrustLineXdrObject(),
+      }),
+    );
+    const { entries } = await this.rpc.getLedgerEntries(key);
+    const entry = entries[0]?.val;
+    return entry?.type === "trustline" ? BigInt(entry.value.balance.toString()) : null;
   }
 
   /** Simulates a read-only pool contract call and returns its result. */

@@ -13,6 +13,17 @@ const instrumentSerif = Instrument_Serif({ subsets: ["latin"], weight: "400", st
 export const metadata: Metadata = {
   title: "PoolFi",
   description: "Group money. Finally fixed. Collect class dues, birthday money and office welfare with one link.",
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+    googleBot: {
+      index: false,
+      follow: false,
+      noimageindex: true,
+      "max-snippet": -1,
+    },
+  },
   // Installed to an iPhone's home screen, PoolFi opens like an app (and can show notifications).
   appleWebApp: { capable: true, title: "PoolFi", statusBarStyle: "default" },
   icons: {

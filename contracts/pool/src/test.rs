@@ -172,6 +172,8 @@ fn second_wallet_joins() {
             joined_at: START,
             contributed: 0,
             refunded: false,
+            expected: None,
+            paid: None,
         })
     );
     assert_eq!(s.pool.get_pool(&pool_id).member_count, 1);

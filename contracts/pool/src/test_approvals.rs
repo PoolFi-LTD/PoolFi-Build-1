@@ -10,7 +10,7 @@ use crate::test::{Setup, START, USDC};
 use soroban_sdk::{vec, Address, Event as _, IntoVal};
 
 impl<'a> Setup<'a> {
-    fn approvers(&self, n: usize) -> Vec<Address> {
+    pub(crate) fn approvers(&self, n: usize) -> Vec<Address> {
         let mut list = Vec::new(&self.env);
         for _ in 0..n {
             list.push_back(self.wallet(0));
@@ -32,7 +32,7 @@ impl<'a> Setup<'a> {
         (pool_id, approvers)
     }
 
-    fn approver(list: &Vec<Address>, i: u32) -> Address {
+    pub(crate) fn approver(list: &Vec<Address>, i: u32) -> Address {
         list.get(i).unwrap()
     }
 }

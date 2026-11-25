@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  approvalsFor,
   approvalsNeeded,
   centsOf,
   centsToBase,
@@ -65,6 +66,13 @@ describe("pools", () => {
 
   it("needs a majority of approvers, as the contract does", () => {
     expect([0, 1, 2, 3, 4, 5, 10].map(approvalsNeeded)).toEqual([0, 1, 2, 2, 3, 3, 6]);
+  });
+
+  it("needs the pool's threshold when it has one, as the contract does", () => {
+    expect(approvalsFor(3, 2)).toBe(2);
+    expect(approvalsFor(3, 3)).toBe(3);
+    expect(approvalsFor(4, null)).toBe(3);
+    expect(approvalsFor(0, null)).toBe(0);
   });
 
   it("makes short codes without look-alike characters", () => {

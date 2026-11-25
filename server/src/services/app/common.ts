@@ -111,6 +111,11 @@ export function approvalsNeeded(approvers: number): number {
   return approvers > 0 ? Math.floor(approvers / 2) + 1 : 0;
 }
 
+/** The approvals a pool's payout needs: its threshold, or a majority when it has none. */
+export function approvalsFor(approvers: number, threshold: number | null): number {
+  return approvers > 0 && threshold !== null ? threshold : approvalsNeeded(approvers);
+}
+
 export const notFound = () => new ApiError(404, "pool_not_found", "Pool not found.");
 
 export const isUuid = (value: string) => z.uuid().safeParse(value).success;

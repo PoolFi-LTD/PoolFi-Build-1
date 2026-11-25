@@ -1,13 +1,14 @@
 import { z } from "zod";
-import type { InviteView, PaymentResult, PoolDetail, PoolRecord } from "../../api-types.ts";
+import type { InviteView, PaymentResult, PoolDetail, PoolOptions, PoolRecord } from "../../api-types.ts";
 import type { AuthUser } from "../../auth.ts";
 import type { Db, Queryable } from "../../db.ts";
 import { ApiError } from "../../errors.ts";
 import type { Chain } from "../../stellar/chain.ts";
-import type { ChainPool, PoolContract } from "../../stellar/pool-contract.ts";
+import { NO_DEADLINE, type ChainPool, type ChainSettings, type PoolContract } from "../../stellar/pool-contract.ts";
 import type { RefundJob } from "../refunds.ts";
 import type { Wallets } from "../wallets.ts";
 import {
+  approvalsFor,
   approvalsNeeded,
   centsOf,
   centsToBase,
@@ -23,7 +24,7 @@ import {
   type PersonRow,
 } from "./common.ts";
 import type { Notifications, ReminderRecipient } from "./notifications.ts";
-import type { AppPoolRow, DiverRow, PoolViews } from "./pool-views.ts";
+import { approvalWindow, type AppPoolRow, type DiverRow, type PoolViews } from "./pool-views.ts";
 
 /** Deadlines closer than this are rejected, so ledger clock drift can't make them already past. */
 const MIN_DEADLINE_LEAD_MS = 60_000;
@@ -43,11 +44,23 @@ export const CreatePoolInput = z.object({
   type: z.enum(POOL_TYPES),
   emoji: z.string().trim().min(1).max(16),
   name: z.string().trim().min(1).max(120),
-  amount: UsdcInput,
-  feeCoveredByDivers: z.boolean(),
-  expectedCount: z.number().int().min(1).max(100_000),
-  deadline: z.iso.datetime({ offset: true }),
+  /** fixed: everyone pays `amount`. voluntary: any amount from `minimum`. */
+  kind: z.enum(["fixed", "voluntary"]).default("fixed"),
+  /** Fixed pools: each diver's share (before any fee they cover). */
+  amount: UsdcInput.nullable().default(null),
+  feeCoveredByDivers: z.boolean().default(false),
+  expectedCount: z.number().int().min(1).max(100_000).default(1),
+  /** Required for fixed pools; null for a voluntary pool without a deadline. */
+  deadline: z.iso.datetime({ offset: true }).nullable(),
+  /** Voluntary pools: the smallest payment, an optional goal, and what happens to the money. */
+  minimum: UsdcInput.nullable().default(null),
+  goal: UsdcInput.nullable().default(null),
+  resolution: z.enum(["all_or_nothing", "keep_raised"]).nullable().default(null),
   approverIds: z.array(z.string().min(1).max(200)).max(10),
+  /** Approvals the payout needs, 1 to the number of approvers; null: a majority. */
+  threshold: z.number().int().min(1).max(10).nullable().default(null),
+  /** Hours the approvers have once the pool is payable, before divers can reclaim (a minute at least); null: no limit. */
+  approvalWindowHours: z.number().min(1 / 60).max(8_760).nullable().default(null),
   members: z.array(NewDiverInput).max(1000),
   pickYourName: z.boolean(),
   allowNotOnList: z.boolean(),
@@ -62,10 +75,11 @@ export const ExtendDeadlineInput = z.object({ deadline: z.iso.datetime({ offset:
 export const AddDiversInput = z.object({ divers: z.array(NewDiverInput).min(1).max(1000) });
 export const PayoutInput = z.object({ destination: z.enum(["wallet", "bank"]) });
 export const DeclineInput = z.object({ reason: z.string().trim().min(1).max(300) });
-export const PayInput = z.union([
-  z.object({ diverId: z.string().min(1) }),
-  z.object({ name: z.string().trim().min(1).max(80) }),
-]);
+/** Who is paying (a name on the list, or a new one), and for voluntary pools how much. */
+export const PayInput = z.intersection(
+  z.union([z.object({ diverId: z.string().min(1) }), z.object({ name: z.string().trim().min(1).max(80) })]),
+  z.object({ amount: UsdcInput.optional() }),
+);
 
 /** A diver picked or added for a payment, and how to undo that if the payment fails. */
 interface Held {
@@ -97,27 +111,71 @@ export class AppPools {
   }
 
   async create(user: AuthUser, input: z.infer<typeof CreatePoolInput>): Promise<PoolDetail> {
-    const deadline = new Date(input.deadline);
-    if (deadline.getTime() < Date.now() + MIN_DEADLINE_LEAD_MS) {
+    const voluntary = input.kind === "voluntary";
+    const deadline = input.deadline === null ? null : new Date(input.deadline);
+    if (deadline === null && !voluntary) throw new ApiError(400, "invalid_deadline", "Pick a deadline.");
+    if (deadline && deadline.getTime() < Date.now() + MIN_DEADLINE_LEAD_MS) {
       throw new ApiError(400, "invalid_deadline", "The deadline must be at least a minute from now.");
     }
     const approverIds = [...new Set(input.approverIds)];
     if (approverIds.length !== input.approverIds.length || approverIds.includes(user.id)) {
       throw new ApiError(400, "invalid_approvers", "Pick up to 10 different approvers, not including yourself.");
     }
+    if (input.threshold !== null && input.threshold > approverIds.length) {
+      throw new ApiError(400, "invalid_threshold", "The approvals needed must be between 1 and the number of approvers.");
+    }
+    if (input.approvalWindowHours !== null && approverIds.length === 0) {
+      throw new ApiError(400, "invalid_approval_window", "An approval window needs approvers.");
+    }
+    if (voluntary) {
+      if (input.minimum === null) throw new ApiError(400, "invalid_terms", "Set the smallest amount people can pay.");
+      if (input.resolution === null) throw new ApiError(400, "invalid_terms", "Choose what happens to the money.");
+      if (input.resolution === "all_or_nothing" && input.goal === null) {
+        throw new ApiError(400, "invalid_terms", "All-or-nothing needs a goal: it refunds everyone if the goal isn't met.");
+      }
+    } else if (input.amount === null) {
+      throw new ApiError(400, "invalid_amount", "Set how much each diver pays.");
+    }
+    // Pool types, thresholds and windows live on the contract; an older contract can't hold them.
+    const withSettings = await this.views.onChain(() => this.contract.hasSettings());
+    if (!withSettings && (voluntary || input.threshold !== null || input.approvalWindowHours !== null)) {
+      throw new ApiError(409, "not_supported", "Voluntary pools, thresholds and approval windows aren't available on this contract yet.");
+    }
     const approvers = await this.approverAddresses(approverIds);
 
     await this.wallets.ensureUser(user);
     const bps = await this.views.feeBps(true);
-    const share = centsToBase(shareCents(centsOf(input.amount), bps, input.feeCoveredByDivers));
-    const expected = Math.max(input.expectedCount, input.members.length, 1);
-    const goal = share * BigInt(expected);
+    let share: bigint;
+    let expected: number;
+    let goal: bigint;
+    if (voluntary) {
+      const minimum = centsToBase(centsOf(input.minimum ?? 0));
+      share = minimum;
+      expected = Math.max(input.members.length, 1);
+      goal = input.goal === null ? 0n : centsToBase(centsOf(input.goal));
+    } else {
+      share = centsToBase(shareCents(centsOf(input.amount ?? 0), bps, input.feeCoveredByDivers));
+      expected = Math.max(input.expectedCount, input.members.length, 1);
+      goal = share * BigInt(expected);
+    }
 
     const keypair = await this.wallets.keypair(user.id);
     const { chainPoolId, txHash } = await this.views.onChain(() =>
-      approvers.length > 0
-        ? this.contract.createPoolWithApprovers(keypair, goal, deadline, approvers)
-        : this.contract.createPool(keypair, goal, deadline),
+      withSettings
+        ? this.contract.createPoolWithTerms(keypair, {
+            kind: input.kind,
+            goalAmount: goal,
+            deadline,
+            shareAmount: voluntary ? null : share,
+            minContribution: voluntary ? share : null,
+            resolution: voluntary ? (input.resolution ?? "keep_raised") : "admin_decides",
+            approvers,
+            threshold: input.threshold,
+            approvalWindowSeconds: input.approvalWindowHours === null ? null : Math.round(input.approvalWindowHours * 3600),
+          })
+        : approvers.length > 0
+          ? this.contract.createPoolWithApprovers(keypair, goal, deadline ?? NO_DEADLINE, approvers)
+          : this.contract.createPool(keypair, goal, deadline ?? NO_DEADLINE),
     );
     const lifeguard = (await this.views.people([user.id])).get(user.id);
 
@@ -134,8 +192,10 @@ export class AppPools {
               chainPoolId.toString(),
               user.id,
               input.name,
-              goal.toString(),
-              deadline,
+              // The pool's settings live on the contract. A pool without a goal or a
+              // deadline keeps the columns' rules here: the minimum, and 9999-12-31.
+              (goal > 0n ? goal : share).toString(),
+              deadline ?? NO_DEADLINE,
               txHash,
               newPoolCode(),
               input.emoji,
@@ -176,6 +236,15 @@ export class AppPools {
   /** The contract's payout fee, for the create screen's preview. */
   async feeBps(): Promise<number> {
     return this.views.feeBps();
+  }
+
+  /** What the create screen can offer on this contract. */
+  async options(): Promise<PoolOptions> {
+    const [feeBps, poolSettings] = await Promise.all([
+      this.views.feeBps(),
+      this.views.onChain(() => this.contract.hasSettings()),
+    ]);
+    return { feeBps, poolSettings };
   }
 
   async get(user: AuthUser, poolId: string): Promise<PoolDetail> {
@@ -293,6 +362,11 @@ export class AppPools {
         share: summary.share,
         deadline: summary.deadline,
         status: summary.status,
+        kind: summary.kind,
+        resolution: summary.resolution,
+        minimum: summary.minimum,
+        hasGoal: summary.hasGoal,
+        hasDeadline: summary.hasDeadline,
         paidCount: summary.paidCount,
         expectedCount: summary.expectedCount,
         progress: summary.progress,
@@ -310,8 +384,8 @@ export class AppPools {
   async payShare(user: AuthUser, code: string, as: z.infer<typeof PayInput>, appUrl: string): Promise<PaymentResult> {
     const row = await this.views.byCode(code);
     const wallet = await this.wallets.ensureUser(user);
-    const state = await this.views.state(row);
-    ensureAcceptingPayments(state);
+    const [state, settings] = await Promise.all([this.views.state(row), this.views.settings(row)]);
+    ensureAcceptingPayments(state, settings);
 
     const [already] = await this.db.query<{ name: string }>(
       `select d.name from pool_divers d join contributions c on c.diver_id = d.id
@@ -320,7 +394,8 @@ export class AppPools {
     );
     if (already) throw new ApiError(409, "already_paid", `You've already paid into this pool as ${already.name}.`);
 
-    const share = BigInt(row.share_amount);
+    // A fixed pool takes its share; a voluntary one what the payer chose, from its minimum.
+    const share = settings.kind === "voluntary" ? voluntaryAmount(as.amount, settings) : BigInt(row.share_amount);
     const held = await this.hold(row, user, as);
     let txHash: string;
     try {
@@ -363,8 +438,9 @@ export class AppPools {
         "insert into activity (pool_id, kind, actor_user_id, actor_name, amount) values ($1, 'payment', $2, $3, $4)",
         [row.id, user.id, held.diver.name, share.toString()],
       );
-      const goal = BigInt(row.goal_amount);
-      const reachedGoal = before < goal && before + share >= goal;
+      // The contract's goal: 0 for a voluntary pool without one.
+      const goal = state.goalAmount;
+      const reachedGoal = goal > 0n && before < goal && before + share >= goal;
       if (reachedGoal) {
         await client.query("insert into activity (pool_id, kind, amount) values ($1, 'goal_met', $2)", [
           row.id,
@@ -385,7 +461,7 @@ export class AppPools {
 
     const now = Date.now();
     const created = row.created_at.getTime();
-    const early = now - created < (row.deadline.getTime() - created) * 0.25;
+    const early = state.deadline.getTime() !== NO_DEADLINE.getTime() && now - created < (row.deadline.getTime() - created) * 0.25;
     return {
       receiptRef: result.receiptRef,
       amount: toUsdc(share),
@@ -403,11 +479,17 @@ export class AppPools {
     if (destination === "bank") {
       throw new ApiError(400, "coming_soon", "Bank payouts are coming soon. Choose your PoolFi wallet for now.");
     }
-    const state = await this.views.state(row);
+    const [state, settings] = await Promise.all([this.views.state(row), this.views.settings(row)]);
     if (state.status === "open" || state.status === "expired") {
+      if (settings.resolution === "keep_raised") {
+        throw new ApiError(409, "not_settleable", "This pool pays out at its deadline, once it has raised something.");
+      }
       throw new ApiError(409, "goal_not_reached", "This pool hasn't reached its goal yet.");
     }
     if (state.status === "settled") throw new ApiError(409, "already_paid_out", "This pool has already been paid out.");
+    if (approvalWindow(state, settings).expired) {
+      throw new ApiError(409, "approval_window_expired", "The approvers didn't approve in time, so everyone who paid can reclaim their USDC.");
+    }
     if (state.status === "refunded") {
       throw new ApiError(409, "pool_refunded", "This pool missed its goal, so its USDC goes back to the divers.");
     }
@@ -418,14 +500,14 @@ export class AppPools {
       // Already waiting (a retry, or a request saved on-chain but not here): nothing more to send.
       if (!state.payoutApprovals) {
         const txHash = await this.views.onChain(() => this.contract.requestPayout(keypair, BigInt(row.chain_pool_id)));
-        const request = await this.saveRequest(row, state, txHash);
+        const request = await this.saveRequest(row, state, settings, txHash);
         await this.notify.approvalNeeded(
           row,
-          { requestId: request.id, gross: state.totalContributed, needed: approvalsNeeded(state.approvers.length) },
+          { requestId: request.id, gross: state.totalContributed, needed: approvalsFor(state.approvers.length, settings.threshold) },
           appUrl,
         );
       } else {
-        await this.openRequest(row, state);
+        await this.openRequest(row, state, settings);
       }
       return this.views.detail(row, user.id);
     }
@@ -447,8 +529,8 @@ export class AppPools {
   /** An approver agrees to the waiting payout; the last approval needed pays it out. */
   async approvePayout(user: AuthUser, poolId: string, appUrl: string): Promise<PoolDetail> {
     const row = await this.approversPool(user, poolId);
-    const state = await this.views.state(row);
-    const request = await this.openRequest(row, state);
+    const [state, settings] = await Promise.all([this.views.state(row), this.views.settings(row)]);
+    const request = await this.openRequest(row, state, settings);
     await this.wallets.ensureUser(user);
     const keypair = await this.wallets.keypair(user.id);
     const bps = await this.views.feeBps(true);
@@ -477,7 +559,7 @@ export class AppPools {
       await this.notify.approvalGiven(row, {
         approverName: nameOf(approver),
         approvals: count?.approvals ?? 1,
-        needed: approvalsNeeded(state.approvers.length),
+        needed: approvalsFor(state.approvers.length, settings.threshold),
       });
     }
     return this.views.detail(row, user.id);
@@ -486,8 +568,8 @@ export class AppPools {
   /** An approver turns the payout down. The money stays in the pool; the lifeguard can ask again. */
   async declinePayout(user: AuthUser, poolId: string, reason: string, appUrl: string): Promise<PoolDetail> {
     const row = await this.approversPool(user, poolId);
-    const state = await this.views.state(row);
-    const request = await this.openRequest(row, state);
+    const [state, settings] = await Promise.all([this.views.state(row), this.views.settings(row)]);
+    const request = await this.openRequest(row, state, settings);
     await this.wallets.ensureUser(user);
     const keypair = await this.wallets.keypair(user.id);
 
@@ -620,6 +702,29 @@ export class AppPools {
     return this.views.detail(await this.views.byId(row.id), user.id);
   }
 
+  /**
+   * The approvers didn't reach the threshold within their window: the user takes
+   * back what they paid, from the contract, signed with their own wallet.
+   */
+  async reclaim(user: AuthUser, poolId: string): Promise<PoolDetail> {
+    const { row } = await this.views.forViewer(poolId, user.id);
+    const [state, settings] = await Promise.all([this.views.state(row), this.views.settings(row)]);
+    if (!approvalWindow(state, settings).expired) {
+      throw new ApiError(409, "approval_window_open", "You can reclaim once the approval window has run out.");
+    }
+    const wallet = await this.wallets.ensureUser(user);
+    const keypair = await this.wallets.keypair(user.id);
+    const { amount, txHash } = await this.views.onChain(() =>
+      this.contract.reclaim(keypair, BigInt(row.chain_pool_id), wallet.address),
+    );
+    await this.db.query(
+      `insert into refunds (pool_id, wallet_address, user_id, amount, tx_hash) values ($1, $2, $3, $4, $5)
+       on conflict do nothing`,
+      [row.id, wallet.address, user.id, amount.toString(), txHash],
+    );
+    return this.views.detail(row, user.id);
+  }
+
   /** Wallet addresses for approver user ids, in the order given. Approvers need an active wallet. */
   private async approverAddresses(ids: string[]): Promise<string[]> {
     if (ids.length === 0) return [];
@@ -728,18 +833,21 @@ export class AppPools {
     }
   }
 
-  private async saveRequest(row: AppPoolRow, state: ChainPool, txHash: string | null): Promise<{ id: string }> {
+  private async saveRequest(row: AppPoolRow, state: ChainPool, settings: ChainSettings, txHash: string | null): Promise<{ id: string }> {
     const [request] = await this.db.query<{ id: string }>(
       `insert into payout_requests (pool_id, requested_by, destination, approvals_needed, request_tx_hash)
        values ($1, $2, 'wallet', $3, $4) returning id`,
-      [row.id, row.admin_user_id, approvalsNeeded(state.approvers.length), txHash],
+      [row.id, row.admin_user_id, approvalsFor(state.approvers.length, settings.threshold), txHash],
     );
     if (!request) throw new Error(`Payout request for pool ${row.id} was not saved`);
     return request;
   }
 
   /** The payout request waiting for approvers, or 409 if there isn't one. */
-  private async openRequest(row: AppPoolRow, state: ChainPool): Promise<{ id: string }> {
+  private async openRequest(row: AppPoolRow, state: ChainPool, settings: ChainSettings): Promise<{ id: string }> {
+    if (approvalWindow(state, settings).expired) {
+      throw new ApiError(409, "approval_window_expired", "The approvers didn't approve in time, so everyone who paid can reclaim their USDC.");
+    }
     if (state.status !== "funded" || !state.payoutApprovals) {
       throw new ApiError(409, "no_payout_request", "There's no payout waiting for approval.");
     }
@@ -748,7 +856,7 @@ export class AppPools {
       [row.id],
     );
     // The contract has a request this database missed (the save after it failed): record it now.
-    return open ?? this.saveRequest(row, state, null);
+    return open ?? this.saveRequest(row, state, settings, null);
   }
 
   /** Saves a payout that happened: the amounts, the lifeguard's incoming USDC and the activity line. */
@@ -801,7 +909,7 @@ function payoutReference(row: AppPoolRow): string {
   return `PF-ST-${codeSuffix(row.code)}`;
 }
 
-function ensureAcceptingPayments(state: ChainPool) {
+function ensureAcceptingPayments(state: ChainPool, settings: ChainSettings) {
   if (state.status === "settled" || state.status === "refunded") {
     throw new ApiError(409, "pool_closed", "This pool is closed.");
   }
@@ -809,8 +917,25 @@ function ensureAcceptingPayments(state: ChainPool) {
     throw new ApiError(409, "payout_pending", "Payments are paused while the payout waits for approval.");
   }
   if (state.status === "expired" || state.deadline.getTime() <= Date.now()) {
-    throw new ApiError(409, "deadline_passed", "This pool's deadline has passed. The lifeguard can give it more time.");
+    throw new ApiError(
+      409,
+      "deadline_passed",
+      settings.kind === "voluntary" ? "This pool's deadline has passed." : "This pool's deadline has passed. The lifeguard can give it more time.",
+    );
   }
+}
+
+/** What a payer chose to put into a voluntary pool: at least its minimum. */
+function voluntaryAmount(amount: number | undefined, settings: ChainSettings): bigint {
+  const minimum = settings.minContribution ?? 0n;
+  if (amount === undefined) throw new ApiError(400, "amount_required", "Choose how much to pay.");
+  const base = centsToBase(centsOf(amount));
+  if (base < minimum) {
+    throw new ApiError(400, "below_minimum", `The smallest payment into this pool is ${toUsdc(minimum).toFixed(2)} USDC.`, {
+      minimum: toUsdc(minimum),
+    });
+  }
+  return base;
 }
 
 function isUniqueViolation(error: unknown, constraint: string): boolean {

@@ -280,6 +280,7 @@ export const httpApi: PoolFiApi = {
   listContacts: () => get("/contacts"),
 
   getFeeBps: async () => (await request<{ bps: number }>("GET", "/fee", undefined, false)).bps,
+  getPoolOptions: () => request("GET", "/pool-options", undefined, false),
   createPool: (input) => post("/pools", input),
   getPool: (id) => get(pool(id)),
   addDivers: (id, divers) => post(`${pool(id)}/divers`, { divers }),
@@ -288,6 +289,7 @@ export const httpApi: PoolFiApi = {
   getRecord: (id) => get(`${pool(id)}/record`),
   extendDeadline: (id, deadline) => post(`${pool(id)}/extend`, { deadline }),
   refundDivers: (id) => post(`${pool(id)}/refund`),
+  reclaim: (id) => post(`${pool(id)}/reclaim`),
 
   getInvite: (code) => request("GET", `/invites/${encodeURIComponent(code)}`, undefined, false),
   payShare: (code, as) => post(`/invites/${encodeURIComponent(code)}/pay`, as),

@@ -176,6 +176,7 @@ function divers(now: number, code: string, share: number, count: number, paid: n
     onList: true,
     userId: null,
     receiptRef: k < paid ? `PF-R-${code.slice(3)}-${String(400 + k).padStart(4, "0")}` : null,
+    onChain: null,
   }));
 }
 
@@ -446,7 +447,13 @@ function summary(s: SampleState, p: SamplePool, userId: string): PoolSummary {
     type: p.type,
     role,
     status: statusOf(p, now),
+    // The sample has fixed pools only: voluntary pools, thresholds and windows need the contract.
+    kind: "fixed",
+    resolution: "admin_decides",
     share: shareOf(p),
+    minimum: null,
+    hasGoal: true,
+    hasDeadline: true,
     expectedCount: p.expectedCount,
     progress: goalOf(p) > 0 ? Math.min(100, Math.floor((raisedOf(p) / goalOf(p)) * 100)) : 0,
     goal: totals ? goalOf(p) : null,
@@ -483,6 +490,11 @@ function detail(s: SampleState, p: SamplePool, userId: string): PoolDetail {
     feeCoveredByDivers: p.feeCovered,
     approvers,
     approvalsNeeded: neededOf(p),
+    threshold: null,
+    approvalWindowHours: null,
+    approvalDeadline: null,
+    approvalWindowExpired: false,
+    canReclaim: false,
     payout: p.payout && {
       requestedAt: new Date(p.payout.requestedAt).toISOString(),
       destination: p.payout.destination,
@@ -779,11 +791,19 @@ export const sampleApi: PoolFiApi = {
     }),
 
   getFeeBps: () => respond(() => FEE_BPS, 60),
+  // The sample has fixed pools only: voluntary pools, thresholds and windows need the contract.
+  getPoolOptions: () => respond(() => ({ feeBps: FEE_BPS, poolSettings: false }), 60),
+  reclaim: () => respond(() => {
+    throw new ApiError("approval_window_open", "You can reclaim once the approval window has run out.");
+  }),
 
   createPool: (input: CreatePoolInput) =>
     respond(() => {
       const s = load();
       const u = me(s);
+      if (input.kind === "voluntary" || input.amount === null || input.deadline === null) {
+        throw new ApiError("not_supported", "Voluntary pools need the real backend.");
+      }
       const now = Date.now();
       const id = `pool${s.nextId++}`;
       const code = newCode(s);
@@ -805,7 +825,7 @@ export const sampleApi: PoolFiApi = {
         cancelled: false,
         divers: input.members.map((m, k) => ({
           id: `${code}-d${k + 1}`, name: m.name, contact: m.contact || null, paid: false, paidAt: null, amount: 0,
-          lastRemindedAt: null, onList: true, userId: null, receiptRef: null,
+          lastRemindedAt: null, onList: true, userId: null, receiptRef: null, onChain: null,
         })),
         activity: [activity(id, "created", `You created ${input.name.trim()}`, now, null, fullName(u))],
         pickYourName: input.pickYourName,
@@ -836,7 +856,7 @@ export const sampleApi: PoolFiApi = {
       for (const m of newDivers) {
         p.divers.push({
           id: `${p.code}-d${p.divers.length + 1}`, name: m.name, contact: m.contact || null, paid: false, paidAt: null,
-          amount: 0, lastRemindedAt: null, onList: true, userId: null, receiptRef: null,
+          amount: 0, lastRemindedAt: null, onList: true, userId: null, receiptRef: null, onChain: null,
         });
       }
       p.expectedCount = Math.max(p.expectedCount, p.divers.length);
@@ -940,6 +960,7 @@ export const sampleApi: PoolFiApi = {
       return {
         pool: {
           id: p.id, code: p.code, emoji: p.emoji, name: p.name, share: sum.share, deadline: sum.deadline, status: sum.status,
+          kind: sum.kind, resolution: sum.resolution, minimum: sum.minimum, hasGoal: sum.hasGoal, hasDeadline: sum.hasDeadline,
           paidCount: sum.paidCount, expectedCount: p.expectedCount, progress: sum.progress,
           approverCount: p.approverIds.length, pickYourName: p.pickYourName, allowNotOnList: p.allowNotOnList,
         },
@@ -968,7 +989,7 @@ export const sampleApi: PoolFiApi = {
         if (d.paid) throw new ApiError("already_paid", `${d.name} has already paid.`);
       } else {
         if (!p.allowNotOnList) throw new ApiError("not_on_list", "Only people on the list can pay into this pool.");
-        d = { id: `${p.code}-d${p.divers.length + 1}`, name: as.name.trim() || fullName(u), contact: u.phone ?? u.email, paid: false, paidAt: null, amount: 0, lastRemindedAt: null, onList: false, userId: null, receiptRef: null };
+        d = { id: `${p.code}-d${p.divers.length + 1}`, name: as.name.trim() || fullName(u), contact: u.phone ?? u.email, paid: false, paidAt: null, amount: 0, lastRemindedAt: null, onList: false, userId: null, receiptRef: null, onChain: null };
         p.divers.push(d);
       }
       const now = Date.now();

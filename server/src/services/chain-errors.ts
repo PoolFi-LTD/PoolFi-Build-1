@@ -28,6 +28,14 @@ const POOL_ERROR_LIST: Mapped[] = [
   { status: 409, code: "already_approved", message: "You've already approved this payout." },
   { status: 409, code: "payout_pending", message: "Payments are paused while the payout waits for approvers." },
   { status: 400, code: "invalid_fee", message: "That fee isn't allowed." },
+  { status: 400, code: "invalid_threshold", message: "The approvals needed must be between 1 and the number of approvers." },
+  { status: 400, code: "invalid_approval_window", message: "The approval window must be up to a year, and needs approvers." },
+  { status: 409, code: "terms_locked", message: "Approvers and the pool's rule can't change once someone has paid in." },
+  { status: 409, code: "approval_window_expired", message: "The approvers didn't approve in time, so everyone who paid can reclaim their USDC." },
+  { status: 400, code: "below_minimum", message: "That's below this pool's minimum." },
+  { status: 400, code: "invalid_terms", message: "Those pool settings don't fit together." },
+  { status: 409, code: "not_settleable", message: "This pool can't be paid out yet." },
+  { status: 409, code: "approval_window_open", message: "You can reclaim once the approval window has run out." },
 ];
 
 /** How many errors the first release had. */

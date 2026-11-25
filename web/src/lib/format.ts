@@ -61,7 +61,13 @@ export function ago(iso: string, now = Date.now()): string {
 }
 
 /** "2d 13h 59m" until `iso`, or null once it has passed. */
+/** Voluntary pools without a deadline carry 9999-12-31 as theirs: they never close. */
+export function hasDeadline(iso: string): boolean {
+  return new Date(iso).getUTCFullYear() < 9999;
+}
+
 export function countdown(iso: string, now = Date.now()): string | null {
+  if (!hasDeadline(iso)) return null;
   const ms = new Date(iso).getTime() - now;
   if (ms <= 0) return null;
   const d = Math.floor(ms / DAY);
@@ -72,6 +78,7 @@ export function countdown(iso: string, now = Date.now()): string | null {
 
 /** "Closes in 3 days", "Closes today", "Closed" */
 export function closesIn(iso: string, now = Date.now()): string {
+  if (!hasDeadline(iso)) return "No deadline";
   const ms = new Date(iso).getTime() - now;
   if (ms <= 0) return "Closed";
   const days = Math.ceil(ms / DAY);

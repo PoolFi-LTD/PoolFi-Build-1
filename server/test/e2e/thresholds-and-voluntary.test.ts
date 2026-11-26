@@ -78,7 +78,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (process.env.E2E_EVIDENCE_FILE) writeFileSync(process.env.E2E_EVIDENCE_FILE, JSON.stringify({ contract: h.chain.poolContractId, ...evidence }, null, 2));
+  if (process.env.E2E_EVIDENCE_FILE && h) writeFileSync(process.env.E2E_EVIDENCE_FILE, JSON.stringify({ contract: h.chain.poolContractId, ...evidence }, null, 2));
   await h?.close();
 });
 
@@ -134,8 +134,8 @@ describe("a pool with a threshold of 2 of 3 approvers", () => {
     expect(first.body).toMatchObject({ status: "approval", payout: { approvals: 1, approvalsNeeded: 2, paidAt: null } });
     expect(await balance(people.lifeguard)).toBe(0);
 
-    // Not an approver, through the app and straight to the contract (it refuses with NotApprover, #113).
-    expect((await app("POST", `/pools/${pool.id}/payout/approve`, people.stranger)).body.error.code).toBe("not_approver");
+    // Not an approver: the app doesn't even show them the pool, and the contract refuses them (NotApprover, #113).
+    expect((await app("POST", `/pools/${pool.id}/payout/approve`, people.stranger)).body.error.code).toBe("pool_not_found");
     const strangerKeys = await h.services.wallets.keypair(people.stranger.id);
     const refused = await h.contract.approvePayout(strangerKeys, await chainId(pool.id)).catch((e: unknown) => e);
     expect(refused).toBeInstanceOf(ChainError);
@@ -207,8 +207,8 @@ describe("approvers who run out of time", () => {
     expect(reclaimed.status).toBe(200);
     expect(reclaimed.body.canReclaim).toBe(false);
     expect(await balance(people.dayo)).toBeCloseTo(before.dayo, 7);
-    // Once only.
-    expect((await app("POST", `/pools/${pool.id}/reclaim`, people.dayo)).body.error.code).toBe("approval_window_open");
+    // Once only (NothingToRefund, #109).
+    expect((await app("POST", `/pools/${pool.id}/reclaim`, people.dayo)).body.error.code).toBe("nothing_to_refund");
     const dayoKeys = await h.services.wallets.keypair(people.dayo.id);
     const [dayoWallet] = await h.db.query<{ public_key: string }>("select public_key from wallets where user_id = $1", [people.dayo.id]);
     const again = await h.contract.reclaim(dayoKeys, await chainId(pool.id), dayoWallet?.public_key ?? "").catch((e: unknown) => e);

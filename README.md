@@ -19,21 +19,28 @@ The development deployment runs the same code and is what the server's automated
 
 | Code (Wasm hash) | Change | Running on |
 |---|---|---|
-| `9ad4d3b934929e473c543ee480511d05e814a7604e457c5e3356b6ad4f1a5480` | A missed deadline waits for the pool admin: `extend_deadline` (any number of times) or `cancel_pool` to refund; no refunds by themselves (status `Expired`) | Development deployment (uploaded in [`88759b8d…`](https://stellar.expert/explorer/testnet/tx/88759b8d40758aa357e1d34916a64aed3e2a3d8a0a9c82003554e83171c9384e), upgraded in [`c1b3d30d…`](https://stellar.expert/explorer/testnet/tx/c1b3d30db756fbc6c3e5f824a95445cb382bdc39c10e401274e97522f983f1be)) |
+| `00ff52ac8928d6ba04fb375f5fdddc1214d32e37fe80e5e2c3bcf2ce029dcf81` | Version 3: fixed pools with each member's share and paid status on-chain, voluntary pools (minimum, optional goal and deadline, all-or-nothing or keep-what's-raised), approval thresholds and windows with `reclaim`, terms locked after the first contribution; settings stored under their own key so earlier pools are untouched; errors 119–126 | Development deployment (uploaded in [`4b9d10af…`](https://stellar.expert/explorer/testnet/tx/4b9d10afb61ac6bafe05e118689938ecc02053aa6e6bc8f8698459e2bff184fb), upgraded in [`13eea0a4…`](https://stellar.expert/explorer/testnet/tx/13eea0a49337e7607fae8769d388e8f8d1677170e86c9dcd53b2d6243cfebf53)) |
+| `9ad4d3b934929e473c543ee480511d05e814a7604e457c5e3356b6ad4f1a5480` | A missed deadline waits for the pool admin: `extend_deadline` (any number of times) or `cancel_pool` to refund; no refunds by themselves (status `Expired`) | Development deployment before version 3 (uploaded in [`88759b8d…`](https://stellar.expert/explorer/testnet/tx/88759b8d40758aa357e1d34916a64aed3e2a3d8a0a9c82003554e83171c9384e), upgraded in [`c1b3d30d…`](https://stellar.expert/explorer/testnet/tx/c1b3d30db756fbc6c3e5f824a95445cb382bdc39c10e401274e97522f983f1be)) |
 | `0d70a2d9170bc74cbb9631be3bd3c43ffbc51b324e5d99447a7dbaf758e459c9` | Payout approvers (majority must agree) and the PoolFi fee on payouts; errors 110–118 | Development deployment before the missed-deadline release (upgraded in [`940ba6ee…`](https://stellar.expert/explorer/testnet/tx/940ba6ee20be4760d782bc1c93c5dca63bcc1a287663e95ede5d61eeb21f754e), fee set to 5% in [`c52c535f…`](https://stellar.expert/explorer/testnet/tx/c52c535f0f67d4df431e4f32cd5db497ec5ac7339d07a48dd5b18b2f689ed424)) |
 | `b4f6432c90ab25f5a07f55e8403903742a237f3a41bae074656fd0a7f0f1c861` | Error codes renumbered to 100–109 so they can't clash with the USDC token's codes | Development deployment before the approvers release (upgraded in [`d0f0c729…`](https://stellar.expert/explorer/testnet/tx/d0f0c729a7023ff20d5bf826f7e05f5fa39c05543198fce66f0c970f864ec7e7)) |
 | `70bf2650a1a9f3a24ec80517d03ec1f56ecb3534be8dfbc594d8a733e6af70b5` | First release, errors 1–10 | Client's deployment, until its Admin upgrades |
 
-The newest code is uploaded to testnet. Upgrading keeps the contract ID and all pools and funds, and can go straight from the first release to the newest. Only the contract admin can do it. An upgraded contract charges no fee until the admin sets one (500 = 5%):
+The newest code is uploaded to testnet. Upgrading keeps the contract ID and all pools and funds, and can go straight from the first release to the newest. Only the contract admin can do it. An upgraded contract charges no fee until the admin sets one (500 = 5%). For the client's deployment, its Admin (`GA6PUGXG…`) runs:
 
 ```sh
-stellar contract invoke --id <contract ID> --network testnet --source-account <admin identity> -- \
-  upgrade --new_wasm_hash 9ad4d3b934929e473c543ee480511d05e814a7604e457c5e3356b6ad4f1a5480
-stellar contract invoke --id <contract ID> --network testnet --source-account <admin identity> -- \
+stellar contract invoke --id CCIFRI4TC5AEUB6FCZRA5UXPGTDDKET4PTFFGBLXTZ4WVYSL5TM6BXUY --network testnet --source-account <client admin identity> -- \
+  upgrade --new_wasm_hash 00ff52ac8928d6ba04fb375f5fdddc1214d32e37fe80e5e2c3bcf2ce029dcf81
+stellar contract invoke --id CCIFRI4TC5AEUB6FCZRA5UXPGTDDKET4PTFFGBLXTZ4WVYSL5TM6BXUY --network testnet --source-account <client admin identity> -- \
   set_fee --bps 500 --recipient <PoolFi fee wallet>
+stellar contract invoke --id CCIFRI4TC5AEUB6FCZRA5UXPGTDDKET4PTFFGBLXTZ4WVYSL5TM6BXUY --network testnet --source-account <client admin identity> -- \
+  version
 ```
 
-The server understands both error numberings, and both ways a contract reports a missed deadline (`Refunded` before this release, `Expired` after), so it works before and after the upgrade.
+`version` prints `3` once the upgrade is through. Existing pools keep working exactly as before: version 3 stores the new settings under their own key and leaves the `Pool` layout alone, so a pool made by any earlier code reads as a fixed pool with a majority of approvers and no approval window.
+
+**The contract admin can replace the code.** `upgrade` is the contract admin's power to swap the contract's code, and new code can do anything with the USDC the contract holds. The rule that the admin can't bypass approvals is about the **pool** admin; the contract admin's key should be held with that in mind.
+
+The server understands both error numberings, both ways a contract reports a missed deadline (`Refunded` before that release, `Expired` after), and contracts with and without version 3 (on older code it creates pools as before, and refuses voluntary pools, thresholds and windows with `not_supported`), so it works before and after each upgrade.
 
 ## Layout
 
@@ -45,7 +52,9 @@ The server understands both error numberings, and both ways a contract reports a
 │       │   ├── lib.rs            contract
 │       │   ├── test.rs           tests
 │       │   ├── test_security.rs  security tests
-│       │   └── test_approvals.rs approver and fee tests
+│       │   ├── test_approvals.rs approver and fee tests
+│       │   ├── test_terms.rs     threshold and approval window tests
+│       │   └── test_voluntary.rs voluntary pool and on-chain share tests
 │       └── Cargo.toml
 ├── server                        HTTP API (Node.js, TypeScript)
 │   ├── src
@@ -185,8 +194,9 @@ The screens in `web/` use `/v1/app`, shaped as `server/src/api-types.ts` describ
 | PUT | `/v1/app/me/profile` | `{ firstName, lastName, avatar }` |
 | GET | `/v1/app/home` | Balance, alerts, the user's pools and recent activity |
 | GET | `/v1/app/pools` | Every pool the user leads, approves or paid into |
-| POST | `/v1/app/pools` | Creates a pool: share (with the fee covered by divers or not), expected divers, deadline, approvers, member list |
-| GET | `/v1/app/pools/:id` | One pool, with its divers, approvers, payout and activity. Contacts only for the lifeguard |
+| POST | `/v1/app/pools` | Creates a pool. `kind: "fixed"`: share (with the fee covered by divers or not), expected divers, deadline. `kind: "voluntary"`: `minimum`, optional `goal` and `deadline` (null for none), `resolution` (`all_or_nothing` needs a goal, or `keep_raised`). Either: approvers, `threshold` (approvals needed), `approvalWindowHours` (time to approve once payable), member list. The pool's settings live on the contract |
+| GET | `/v1/app/pools/:id` | One pool, with its divers (each with what they owe and paid, read from the contract), approvers, threshold, approval window, payout and activity. Contacts only for the lifeguard |
+| POST | `/v1/app/pools/:id/reclaim` | Once the approvers' window has run out without a payout: takes back what the user paid, from the contract |
 | POST | `/v1/app/pools/:id/divers` | Lifeguard: adds people to the list |
 | POST | `/v1/app/pools/:id/reminders` | Lifeguard: marks the unpaid as reminded and returns the message to send |
 | GET | `/v1/app/pools/:id/record` | The pool's statement |
@@ -194,12 +204,13 @@ The screens in `web/` use `/v1/app`, shaped as `server/src/api-types.ts` describ
 | POST | `/v1/app/pools/:id/payout/approve` | Approver: agrees; the last approval needed pays out |
 | POST | `/v1/app/pools/:id/payout/decline` | Approver: `{ reason }`; the money stays and the lifeguard can ask again |
 | GET | `/v1/app/invites/:code` | Public: what the invite link shows (names only) |
-| POST | `/v1/app/invites/:code/pay` | `{ diverId }` or `{ name }`: pays the share from the user's wallet, returns the receipt reference |
+| POST | `/v1/app/invites/:code/pay` | `{ diverId }` or `{ name }`, and for a voluntary pool `amount` (at least its minimum): pays from the user's wallet, returns the receipt reference |
 | GET | `/v1/app/activity`, `/v1/app/contacts` | The user's activity feed; people they share pools with (for picking approvers) |
 | GET | `/v1/app/wallet` | Address, balance and history |
 | POST | `/v1/app/wallet/deposits` | `{ amount }`: test USDC (testnet) |
 | GET | `/v1/app/receipts/:ref` | Public: checks a receipt |
 | GET | `/v1/app/fee` | Public: the contract's payout fee in basis points |
+| GET | `/v1/app/pool-options` | Public: the fee, and whether the contract takes pool types, thresholds and windows (version 3) |
 | PATCH | `/v1/app/pools/:id/settings` | Lifeguard: `{ diversSeePayments }`. Off (the default), each diver sees only their own payment and the totals |
 | GET, POST | `/v1/app/notifications`, `/v1/app/notifications/read` | The notifications inbox with unread items; marking it read |
 | GET, PUT | `/v1/app/me/achievements`, `/v1/app/me/preferences` | Streak and badges for the Settings screen; `{ remindersOn }` |
@@ -304,6 +315,8 @@ npm --workspace server run test:e2e   # the flows and escrow on Stellar testnet 
 `admin.test.ts` checks the admin dashboard: only the team gets in; what it shows; extending and closing a pool with the lifeguard's wallet; suspending, unlocking and signing out an account; putting a wallet on Stellar; the admin log.
 
 `missed-deadline.test.ts` waits out a short deadline: the lifeguard is asked (and nobody is refunded), extends it, divers pay again, and when the new deadline passes too the lifeguard refunds everyone.
+
+`thresholds-and-voluntary.test.ts` needs contract version 3: a pool needing 2 of 3 approvals pays out only on the second (refusing a stranger, the lifeguard and a repeat approval on-chain), members' shares and paid status come from the contract, approvers who run out of a one-minute window let everyone reclaim once, and voluntary pools take 1, 1.50 and 2.25 USDC from three wallets: all-or-nothing below its goal refunds each exactly, keep-what's-raised pays out at its deadline. `E2E_EVIDENCE_FILE=<path>` writes its transaction hashes to a file.
 
 `app-flow.test.ts` runs the web app's flow: a pool with three approvers and a fee-covering share, the invite link, paying (including a failed payment that frees the name again), reminders, a declined payout, then a majority approval that pays the lifeguard less the fee, and the wallet, record, receipt and contacts that follow.
 

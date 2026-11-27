@@ -12,7 +12,8 @@ const nextConfig: NextConfig = {
   // Loaded from node_modules at run time rather than bundled.
   serverExternalPackages: ["@stellar/stellar-sdk", "fastify", "@fastify/cors", "pg", "web-push"],
   // The service worker must never be cached, so a fix reaches everyone on their next visit.
-  // The Stellar app subdomain (app.thepoolfi.com) is private and must never be indexed by search engines.
+  // The Stellar app subdomain (app.thepoolfi.com) is private and must never be indexed by search
+  // engines: every page says noindex, and robots.txt lets crawlers in to read it.
   async headers() {
     return [
       {

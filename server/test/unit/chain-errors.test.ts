@@ -88,9 +88,23 @@ describe("toApiError", () => {
     expect(codes).toEqual(expected);
   });
 
+  it("maps the errors of pool types, thresholds and approval windows", () => {
+    const codes = [119, 120, 121, 122, 123, 124, 125, 126].map((code) => apiError(contractFailure([contractError(POOL, code)], "")).code);
+    expect(codes).toEqual([
+      "invalid_threshold",
+      "invalid_approval_window",
+      "terms_locked",
+      "approval_window_expired",
+      "below_minimum",
+      "invalid_terms",
+      "not_settleable",
+      "approval_window_open",
+    ]);
+  });
+
   it("doesn't guess when it can't tell which contract failed", () => {
     expect(apiError(contractFailure(undefined, "HostError: Error(Contract, #105)")).code).toBe("transaction_failed");
-    for (const unknown of [0, 11, 99, 119]) {
+    for (const unknown of [0, 11, 99, 127]) {
       expect(apiError(contractFailure([contractError(POOL, unknown)], "")).code).toBe("transaction_failed");
     }
   });

@@ -108,11 +108,21 @@ export function ActivityRow({ item, now, index = 0, fresh }: { item: ActivityIte
 }
 
 export function DiverRow({ diver, now, contact, fresh }: { diver: Diver; now: number; contact?: boolean; fresh?: boolean }) {
-  const sub = diver.paid
-    ? `Paid ${ago(diver.paidAt ?? "", now).toLowerCase()}`
+  // The contract's record, once they have a wallet in the pool: it decides paid or not.
+  const chain = diver.onChain;
+  const paid = chain ? chain.paid : diver.paid;
+  const sub = paid
+    ? `Paid ${diver.paidAt ? ago(diver.paidAt, now).toLowerCase() : ""}`.trim()
     : diver.lastRemindedAt
       ? `Reminded ${ago(diver.lastRemindedAt, now).toLowerCase()}`
       : "Not paid yet";
+  const onChain = chain
+    ? chain.refunded
+      ? "on-chain: refunded"
+      : chain.expected !== null
+        ? `on-chain: ${formatUsdc(chain.contributed)} of ${formatUsdc(chain.expected)}`
+        : `on-chain: ${formatUsdc(chain.contributed)}`
+    : "";
   return (
     <div className={`${s.diverRow}${fresh ? " row-fresh" : ""}`}>
       <Avatar name={diver.name} />
@@ -120,10 +130,11 @@ export function DiverRow({ diver, now, contact, fresh }: { diver: Diver; now: nu
         <div className={s.diverName}>{diver.name}</div>
         <div className={s.diverSub}>
           {sub}
+          {onChain ? ` · ${onChain}` : ""}
           {contact && diver.contact ? ` · ${diver.contact}` : ""}
         </div>
       </div>
-      <StatusPill status={diver.paid ? "paid" : "not_paid"} />
+      <StatusPill status={paid ? "paid" : "not_paid"} />
     </div>
   );
 }

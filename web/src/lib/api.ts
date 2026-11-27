@@ -13,6 +13,7 @@ import type {
   NewDiver,
   PaymentResult,
   PoolDetail,
+  PoolOptions,
   PoolRecord,
   PoolSummary,
   Receipt,
@@ -69,6 +70,8 @@ export interface PoolFiApi {
   // Pools
   /** PoolFi's payout fee in basis points (500 = 5%), as the contract takes it. */
   getFeeBps(): Promise<number>;
+  /** The fee, and whether the contract takes pool types, thresholds and approval windows. */
+  getPoolOptions(): Promise<PoolOptions>;
   createPool(input: CreatePoolInput): Promise<PoolDetail>;
   getPool(id: string): Promise<PoolDetail>;
   addDivers(poolId: string, divers: NewDiver[]): Promise<PoolDetail>;
@@ -81,11 +84,16 @@ export interface PoolFiApi {
   extendDeadline(poolId: string, deadline: string): Promise<PoolDetail>;
   /** The lifeguard ends a pool that missed its deadline: everyone who paid is refunded now. */
   refundDivers(poolId: string): Promise<PoolDetail>;
+  /** The approvers missed their window: the signed-in user takes back what they paid. */
+  reclaim(poolId: string): Promise<PoolDetail>;
 
   // The invite link (public)
   getInvite(code: string): Promise<InviteView>;
-  /** Pays the diver's share from their PoolFi wallet, as `diverId` from the list or a new `name`. */
-  payShare(code: string, as: { diverId: string } | { name: string }): Promise<PaymentResult>;
+  /**
+   * Pays the diver's share from their PoolFi wallet, as `diverId` from the list or a new
+   * `name`; into a voluntary pool, `amount` (at least its minimum).
+   */
+  payShare(code: string, as: ({ diverId: string } | { name: string }) & { amount?: number }): Promise<PaymentResult>;
 
   // Payouts
   requestPayout(poolId: string, destination: "wallet" | "bank"): Promise<PoolDetail>;

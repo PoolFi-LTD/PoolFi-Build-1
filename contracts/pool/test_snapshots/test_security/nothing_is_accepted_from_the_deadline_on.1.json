@@ -227,6 +227,12 @@
                   },
                   {
                     "key": {
+                      "symbol": "expected"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
                       "symbol": "index"
                     },
                     "val": {
@@ -240,6 +246,12 @@
                     "val": {
                       "u64": "1780604799"
                     }
+                  },
+                  {
+                    "key": {
+                      "symbol": "paid"
+                    },
+                    "val": "void"
                   },
                   {
                     "key": {

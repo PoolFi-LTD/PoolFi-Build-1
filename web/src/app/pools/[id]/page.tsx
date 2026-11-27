@@ -191,24 +191,37 @@ function Divers({ pool, now, showContacts, fresh }: { pool: PoolDetail; now: num
   );
 }
 
+const RULES: Record<PoolDetail["resolution"], string> = {
+  admin_decides: "At a missed deadline, the lifeguard gives more time or refunds everyone",
+  all_or_nothing: "All or nothing: everyone is refunded if the goal isn't met by the deadline",
+  keep_raised: "Keep what's raised: paid out at the deadline, goal or not",
+};
+
 function Details({ pool }: { pool: PoolDetail }) {
   const approvers = pool.approvers.map((a) => a.name).join(", ");
+  const voluntary = pool.kind === "voluntary";
   return (
     <dl className="kv">
       <div>
-        <dt>Each diver pays</dt>
+        <dt>{voluntary ? "Smallest payment" : "Each diver pays"}</dt>
         <dd>
-          {formatUsdc(pool.share)}
+          {formatUsdc(voluntary ? (pool.minimum ?? pool.share) : pool.share)}
           {pool.feeCoveredByDivers ? " (fee included)" : ""}
         </dd>
       </div>
-      <div>
-        <dt>Divers expected</dt>
-        <dd>{pool.expectedCount}</dd>
-      </div>
+      {!voluntary && (
+        <div>
+          <dt>Divers expected</dt>
+          <dd>{pool.expectedCount}</dd>
+        </div>
+      )}
       <div>
         <dt>Goal</dt>
-        <dd>{formatUsdc(pool.goal ?? 0)}</dd>
+        <dd>{pool.hasGoal ? formatUsdc(pool.goal ?? 0) : "No goal"}</dd>
+      </div>
+      <div>
+        <dt>Rule</dt>
+        <dd>{RULES[pool.resolution]}</dd>
       </div>
       <div>
         <dt>PoolFi fee</dt>
@@ -216,11 +229,20 @@ function Details({ pool }: { pool: PoolDetail }) {
       </div>
       <div>
         <dt>Approvers</dt>
-        <dd>{approvers || "None, the lifeguard releases the payout"}</dd>
+        <dd>{approvers ? `${approvers} (${pool.approvalsNeeded} of ${pool.approvers.length} must approve)` : "None, the lifeguard releases the payout"}</dd>
       </div>
+      {pool.approvalWindowHours !== null && (
+        <div>
+          <dt>Time to approve</dt>
+          <dd>
+            {pool.approvalWindowHours % 24 === 0 ? `${pool.approvalWindowHours / 24} days` : `${pool.approvalWindowHours} hours`} once the pool can pay out
+            {pool.approvalDeadline ? `, until ${fullDateTime(pool.approvalDeadline)}` : ""}
+          </dd>
+        </div>
+      )}
       <div>
         <dt>Closes</dt>
-        <dd>{fullDateTime(pool.deadline)}</dd>
+        <dd>{pool.hasDeadline ? fullDateTime(pool.deadline) : "No deadline"}</dd>
       </div>
       <div>
         <dt>Pool ID</dt>
@@ -290,7 +312,13 @@ function LifeguardView({ pool, now, reload, onShare }: { pool: PoolDetail; now: 
           {pool.status === "active" && (
             <p className="note">
               <Icon name="refresh" />
-              If the goal isn&apos;t met by {dayDate(pool.deadline)}, you choose: give the pool more time, or refund every diver who paid.
+              {pool.resolution === "all_or_nothing"
+                ? `If the goal isn't met by ${dayDate(pool.deadline)}, everyone who paid is refunded.`
+                : pool.resolution === "keep_raised"
+                  ? pool.hasDeadline
+                    ? `On ${dayDate(pool.deadline)}, whatever was raised can be paid out to you.`
+                    : "Whatever is raised can be paid out to you whenever you ask."
+                  : `If the goal isn't met by ${dayDate(pool.deadline)}, you choose: give the pool more time, or refund every diver who paid.`}
             </p>
           )}
           {pool.status === "missed" && (
@@ -324,7 +352,9 @@ function LifeguardView({ pool, now, reload, onShare }: { pool: PoolDetail; now: 
           {pool.status === "refunded" && (
             <p className="note">
               <Icon name="refresh" />
-              The pool didn&apos;t reach its goal, so every diver who paid was refunded.
+              {pool.approvalWindowExpired
+                ? "The approvers didn't approve in time, so everyone who paid can take their USDC back."
+                : "The pool didn't reach its goal, so every diver who paid was refunded."}
             </p>
           )}
         </div>
@@ -425,7 +455,7 @@ function DiverView({ pool, now, onShare }: { pool: PoolDetail; now: number; onSh
               <Icon name="check" />
             </span>
             <div>
-              <b>You&apos;ve paid {formatUsdc(pool.share)}</b>
+              <b>You&apos;ve paid {formatUsdc(pool.divers.find((d) => d.userId && d.paid && d.amount)?.amount ?? pool.share)}</b>
               <div className="t-small muted">No more reminders for this pool.</div>
             </div>
             {pool.yourReceiptRef && (
@@ -436,7 +466,7 @@ function DiverView({ pool, now, onShare }: { pool: PoolDetail; now: number; onSh
           </div>
         ) : pool.status !== "missed" ? (
           <Link href={`/p/${pool.code}`} className="btn btn-primary btn-block">
-            Pay your share, {formatUsdc(pool.share)}
+            {pool.kind === "voluntary" ? `Pay in, from ${formatUsdc(pool.minimum ?? pool.share)}` : `Pay your share, ${formatUsdc(pool.share)}`}
           </Link>
         ) : null}
         <Tank pool={pool} from={motion.from} tank={tank} />
@@ -514,6 +544,45 @@ function ApproverView({ pool, now }: { pool: PoolDetail; now: number }) {
   );
 }
 
+/**
+ * The approvers' window: how long they have once the pool can pay out and, once it
+ * has run out without enough approvals, a button to take your payment back.
+ */
+function ApprovalWindow({ pool, now, reload }: { pool: PoolDetail; now: number; reload: () => void }) {
+  const toast = useToast();
+  const reclaim = useAction(() => api.reclaim(pool.id));
+  if (pool.canReclaim) {
+    return (
+      <div className="note" style={{ display: "grid", gap: 10, background: "var(--amber-50)", color: "var(--amber-ink)" }}>
+        <span>
+          <b>The approvers didn&apos;t approve in time.</b> Everyone who paid can take their USDC back.
+        </span>
+        <button
+          className="btn btn-primary"
+          disabled={reclaim.busy}
+          onClick={async () => {
+            if ((await reclaim.run()).ok) {
+              toast("Your USDC is back in your wallet", "↩️");
+              reload();
+            }
+          }}
+        >
+          Reclaim my USDC
+        </button>
+        <ErrorText error={reclaim.error} />
+      </div>
+    );
+  }
+  const left = pool.approvalDeadline && !pool.approvalWindowExpired ? countdown(pool.approvalDeadline, now) : null;
+  if (!left || (pool.status !== "met" && pool.status !== "approval")) return null;
+  return (
+    <p className="note">
+      <Icon name="clock" />
+      Approvers have {left} left. If {pool.approvalsNeeded} haven&apos;t approved by then, everyone who paid can take their USDC back.
+    </p>
+  );
+}
+
 /** For everyone but the lifeguard: the deadline passed, and the lifeguard decides what happens. */
 function MissedNote({ pool }: { pool: PoolDetail }) {
   const first = pool.lifeguard.name.split(" ")[0];
@@ -533,7 +602,14 @@ function RefundedView({ pool }: { pool: PoolDetail }) {
   return (
     <div className={s.narrow}>
       {/* The water drains away: the money went back. */}
-      <WaterTank refunded drain pct={0} from={pct} line={`${pct}% of the goal`} sub="Deadline passed before the goal" />
+      <WaterTank
+        refunded
+        drain
+        pct={0}
+        from={pct}
+        line={`${pct}% of the goal`}
+        sub={pool.approvalWindowExpired ? "The approvers ran out of time" : "Deadline passed before the goal"}
+      />
       {pool.yourRefund !== null && (
         <div className={`${s.refundCard} bub-in`} style={{ animationDelay: "900ms" }}>
           <span className={s.refundIcon}>
@@ -541,7 +617,13 @@ function RefundedView({ pool }: { pool: PoolDetail }) {
           </span>
           <div>
             <b>{formatUsdc(pool.yourRefund)} is back in your PoolFi balance</b>
-            <p>The pool didn&apos;t reach its goal, so {pool.lifeguard.name.split(" ")[0]} refunded everyone who paid.</p>
+            <p>
+              {pool.approvalWindowExpired
+                ? "The approvers didn't approve the payout in time, so everyone who paid takes their USDC back."
+                : pool.resolution === "all_or_nothing"
+                  ? "The pool didn't reach its goal by the deadline, so everyone who paid was refunded."
+                  : `The pool didn't reach its goal, so ${pool.lifeguard.name.split(" ")[0]} refunded everyone who paid.`}
+            </p>
           </div>
         </div>
       )}
@@ -603,6 +685,7 @@ function PoolPage() {
                 )
               }
             />
+            <ApprovalWindow pool={p} now={now} reload={pool.reload} />
             {refundedDiver ? (
               <RefundedView pool={p} />
             ) : p.role === "lifeguard" ? (

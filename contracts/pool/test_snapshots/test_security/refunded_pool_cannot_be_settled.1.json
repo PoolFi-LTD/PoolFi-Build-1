@@ -359,6 +359,12 @@
                   },
                   {
                     "key": {
+                      "symbol": "expected"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
                       "symbol": "index"
                     },
                     "val": {
@@ -372,6 +378,12 @@
                     "val": {
                       "u64": "1780000000"
                     }
+                  },
+                  {
+                    "key": {
+                      "symbol": "paid"
+                    },
+                    "val": "void"
                   },
                   {
                     "key": {
@@ -422,6 +434,12 @@
                   },
                   {
                     "key": {
+                      "symbol": "expected"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
                       "symbol": "index"
                     },
                     "val": {
@@ -435,6 +453,12 @@
                     "val": {
                       "u64": "1780000000"
                     }
+                  },
+                  {
+                    "key": {
+                      "symbol": "paid"
+                    },
+                    "val": "void"
                   },
                   {
                     "key": {
@@ -739,6 +763,90 @@
                     "val": {
                       "i128": "0"
                     }
+                  }
+                ]
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 1555200
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "Settings"
+                  },
+                  {
+                    "u64": "0"
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "map": [
+                  {
+                    "key": {
+                      "symbol": "approval_window"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
+                      "symbol": "kind"
+                    },
+                    "val": {
+                      "vec": [
+                        {
+                          "symbol": "Fixed"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "min_contribution"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
+                      "symbol": "resolution"
+                    },
+                    "val": {
+                      "vec": [
+                        {
+                          "symbol": "AdminDecides"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "settleable_since"
+                    },
+                    "val": {
+                      "u64": "1780000000"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "share_amount"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
+                      "symbol": "threshold"
+                    },
+                    "val": "void"
                   }
                 ]
               }

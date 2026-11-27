@@ -1,9 +1,10 @@
 import type { ActivityItem, Approver, Diver, PoolDetail, PoolSummary, PoolType, Role } from "../../api-types.ts";
 import type { Db } from "../../db.ts";
 import { ApiError } from "../../errors.ts";
-import type { ChainPool, PoolContract } from "../../stellar/pool-contract.ts";
+import { NO_DEADLINE, type ChainMemberStatus, type ChainPool, type ChainSettings, type PoolContract } from "../../stellar/pool-contract.ts";
 import { toApiError } from "../chain-errors.ts";
 import {
+  approvalsFor,
   approvalsNeeded,
   feeOn,
   isUuid,
@@ -107,6 +108,7 @@ interface ViewerRow {
 export interface BuiltPool {
   row: AppPoolRow;
   state: ChainPool;
+  settings: ChainSettings;
   summary: PoolSummary;
 }
 
@@ -185,6 +187,11 @@ export class PoolViews {
     return { row, role };
   }
 
+  /** The pool's settings on the contract: its kind, rule, threshold and approval window. */
+  async settings(row: AppPoolRow): Promise<ChainSettings> {
+    return this.onChain(() => this.contract.getSettings(BigInt(row.chain_pool_id)));
+  }
+
   async state(row: AppPoolRow): Promise<ChainPool> {
     const state = await this.onChain(() => this.contract.getPool(BigInt(row.chain_pool_id)));
     // The lifeguard extended the deadline but saving it here failed: the contract has the real one.
@@ -201,14 +208,16 @@ export class PoolViews {
   async summaries(rows: AppPoolRow[], viewerId: string | null): Promise<BuiltPool[]> {
     if (rows.length === 0) return [];
     const ids = rows.map((r) => r.id);
-    const [states, viewers, lifeguards] = await Promise.all([
+    const [states, settings, viewers, lifeguards] = await Promise.all([
       mapLimit(rows, READS_AT_ONCE, (row) => this.state(row)),
+      mapLimit(rows, READS_AT_ONCE, (row) => this.settings(row)),
       this.viewers(ids, viewerId),
       this.people(rows.map((r) => r.admin_user_id)),
     ]);
     const byPool = new Map(viewers.map((v) => [v.id, v]));
     return rows.map((row, i) => {
       const state = states[i] as ChainPool;
+      const poolSettings = settings[i] as ChainSettings;
       const viewer = byPool.get(row.id);
       const role: Role =
         row.admin_user_id === viewerId ? "lifeguard" : viewer?.approver ? "approver" : "diver";
@@ -219,6 +228,7 @@ export class PoolViews {
       return {
         row,
         state,
+        settings: poolSettings,
         summary: {
           id: row.id,
           code: row.code,
@@ -227,7 +237,12 @@ export class PoolViews {
           type: row.type,
           role,
           status: statusOf(state),
+          kind: poolSettings.kind,
+          resolution: poolSettings.resolution,
           share: toUsdc(row.share_amount),
+          minimum: poolSettings.minContribution === null ? null : toUsdc(poolSettings.minContribution),
+          hasGoal: state.goalAmount > 0n,
+          hasDeadline: state.deadline.getTime() !== NO_DEADLINE.getTime(),
           expectedCount: row.expected_count,
           progress,
           goal: totals ? toUsdc(state.goalAmount) : null,
@@ -242,7 +257,7 @@ export class PoolViews {
   }
 
   async detail(row: AppPoolRow, viewerId: string | null): Promise<PoolDetail> {
-    const [[built], divers, approvers, request, activity, mine, bps] = await Promise.all([
+    const [[built], divers, approvers, request, activity, mine, bps, wallets] = await Promise.all([
       this.summaries([row], viewerId),
       this.divers(row.id),
       this.db.query<PersonRow & { user_id: string }>(
@@ -258,9 +273,23 @@ export class PoolViews {
         : this.activity([row.id], null, 50, [], [row.id]),
       viewerId ? this.viewerMoney(row.id, viewerId) : null,
       this.feeBps(),
+      this.db.query<{ user_id: string; public_key: string }>(
+        `select w.user_id, w.public_key from wallets w
+         where w.user_id in (select user_id from pool_divers where pool_id = $1 and user_id is not null union select $2::text)`,
+        [row.id, viewerId ?? ""],
+      ),
     ]);
     if (!built) throw notFound();
-    const { summary, state } = built;
+    const { summary, state, settings } = built;
+    // Who owes what and has paid, from the contract (a contract older than version 3 has no such list).
+    const statuses = (await this.contract.hasSettings())
+      ? await this.onChain(() => this.contract.getMemberStatuses(BigInt(row.chain_pool_id), state.memberCount))
+      : [];
+    const byAddress = new Map(statuses.map((s) => [s.address, s]));
+    const walletOf = new Map(wallets.map((w) => [w.user_id, w.public_key]));
+    const chainOf = (userId: string | null) => (userId ? (byAddress.get(walletOf.get(userId) ?? "") ?? null) : null);
+    const window = approvalWindow(state, settings);
+    const viewerChain = chainOf(viewerId);
     const isLifeguard = summary.role === "lifeguard";
     // The money totals are for the lifeguard and approvers; divers see progress only.
     const totals = summary.role !== "diver";
@@ -315,10 +344,17 @@ export class PoolViews {
       feeBps: bps,
       feeCoveredByDivers: row.fee_covered,
       approvers: approverViews,
-      approvalsNeeded: approvalsNeeded(approvers.length),
+      approvalsNeeded: approvalsFor(approvers.length, settings.threshold),
+      threshold: settings.threshold,
+      approvalWindowHours: settings.approvalWindowSeconds === null ? null : settings.approvalWindowSeconds / 3600,
+      approvalDeadline: window.endsAt?.toISOString() ?? null,
+      approvalWindowExpired: window.expired,
+      canReclaim: window.expired && viewerChain !== null && viewerChain.contributed > 0n && !viewerChain.refunded,
       payout,
       // Phone numbers and emails are only for the lifeguard.
-      divers: divers.filter((d) => !hidePayments || d.user_id === viewerId).map((d) => toDiver(d, isLifeguard)),
+      divers: divers
+        .filter((d) => !hidePayments || d.user_id === viewerId)
+        .map((d) => toDiver(d, isLifeguard, chainOf(d.user_id))),
       pickYourName: row.pick_your_name,
       allowNotOnList: row.allow_not_on_list,
       diversCanShare: row.divers_can_share,
@@ -463,7 +499,7 @@ export class PoolViews {
   }
 }
 
-export function toDiver(row: DiverRow, withContact: boolean): Diver {
+export function toDiver(row: DiverRow, withContact: boolean, chain: ChainMemberStatus | null = null): Diver {
   return {
     id: row.id,
     name: row.name,
@@ -475,7 +511,25 @@ export function toDiver(row: DiverRow, withContact: boolean): Diver {
     onList: row.on_list,
     userId: row.user_id,
     receiptRef: row.receipt_ref,
+    onChain: chain && {
+      expected: chain.expected === null ? null : toUsdc(chain.expected),
+      contributed: toUsdc(chain.contributed),
+      paid: chain.paid,
+      refunded: chain.refunded,
+    },
   };
+}
+
+/**
+ * When the approvers' window runs out (once the pool is payable), and whether it
+ * has without the pool paying out: then everyone who paid can reclaim.
+ */
+export function approvalWindow(state: ChainPool, settings: ChainSettings): { endsAt: Date | null; expired: boolean } {
+  if (settings.approvalWindowSeconds === null || !settings.settleableSince || state.approvers.length === 0) {
+    return { endsAt: null, expired: false };
+  }
+  const endsAt = new Date(settings.settleableSince.getTime() + settings.approvalWindowSeconds * 1000);
+  return { endsAt, expired: state.status !== "settled" && Date.now() >= endsAt.getTime() };
 }
 
 /** The activity line as `viewerId` reads it: "You paid…" for them, "Ada paid…" for everyone else. */

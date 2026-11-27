@@ -13,7 +13,7 @@ import { DepositPanel, MethodButton } from "@/components/wallet";
 import { api } from "@/lib/api";
 import { countdown } from "@/lib/format";
 import { useAction, useNow, useResource } from "@/lib/hooks";
-import { formatAmount, formatUsdc } from "@/lib/money";
+import { formatAmount, formatUsdc, roundUsdc } from "@/lib/money";
 import type { InviteView, Wallet } from "@/lib/types";
 import s from "./invite.module.css";
 
@@ -24,14 +24,19 @@ const PAYING_MS = 1600;
 const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
 /** Choosing a method, topping up and confirming a USDC payment from the PoolFi wallet. */
-function PayFlow({ invite, payer, step, setStep }: { invite: InviteView; payer: { diverId: string } | { name: string }; step: Step; setStep: (s: Step) => void }) {
+function PayFlow({
+  invite, payer, amount, step, setStep,
+}: {
+  invite: InviteView; payer: { diverId: string } | { name: string }; amount: number; step: Step; setStep: (s: Step) => void;
+}) {
   const router = useRouter();
   const { user } = useSession();
   const [method, setMethod] = useState<"bank" | "usdc">("usdc");
   const [bank, setBank] = useState(false);
   const wallet = useResource<Wallet | null>(() => (user ? api.getWallet() : Promise.resolve(null)), [user?.id, step]);
   const pay = useAction(api.payShare);
-  const share = invite.pool.share;
+  // A fixed pool's share, or what the payer chose to put into a voluntary one.
+  const share = amount;
   const balance = wallet.data?.balance ?? 0;
   const payerName = "diverId" in payer ? (invite.names.find((n) => n.id === payer.diverId)?.name ?? "") : payer.name;
 
@@ -42,7 +47,8 @@ function PayFlow({ invite, payer, step, setStep }: { invite: InviteView; payer: 
 
   async function confirm() {
     setStep("paying");
-    const [done] = await Promise.all([pay.run(invite.pool.code, payer), wait(PAYING_MS)]);
+    const as = invite.pool.kind === "voluntary" ? { ...payer, amount } : payer;
+    const [done] = await Promise.all([pay.run(invite.pool.code, as), wait(PAYING_MS)]);
     if (!done.ok) return setStep("confirm");
     const q = new URLSearchParams({ ref: done.value.receiptRef, pool: done.value.poolId, badges: done.value.badges.join("|") });
     router.push(`/p/${invite.pool.code}/paid?${q}`);
@@ -189,6 +195,12 @@ function InviteBody({
   const p = inv.pool;
   const firstName = inv.lifeguard.name.split(" ")[0];
   const left = countdown(p.deadline, now);
+  // A voluntary pool takes any amount from its minimum; a fixed one, its share.
+  const voluntary = p.kind === "voluntary";
+  const minimum = p.minimum ?? p.share;
+  const [amountText, setAmountText] = useState("");
+  const amount = voluntary ? roundUsdc(Number(amountText || 0)) : p.share;
+  const amountOk = !voluntary || amount >= minimum;
   const pct = p.progress;
   const open = p.status === "active" || p.status === "met";
   // Everyone on the list, still to pay first, then who has paid; a search narrows it.
@@ -220,16 +232,16 @@ function InviteBody({
     >
       <div className={s.column}>
         <section className={`${s.share} rise`} aria-label="Your share">
-          <span className="muted t-small">Your share</span>
+          <span className="muted t-small">{voluntary ? "Give any amount from" : "Your share"}</span>
           <span className={s.shareAmount}>
-            {formatAmount(p.share)}
+            {formatAmount(voluntary ? minimum : p.share)}
             <span className="unit">USDC</span>
           </span>
           {left && open && <span className={`${s.closes} hide-m`}>Closes in {left}</span>}
           <div className="fill-bar hide-m" style={{ width: "100%" }}>
             <i style={{ width: `${pct}%` }} />
           </div>
-          <span className="t-caption muted">{pct}% of the goal reached</span>
+          <span className="t-caption muted">{p.hasGoal ? `${pct}% of the goal reached` : "No goal: every bit counts"}</span>
         </section>
 
         {!open ? (
@@ -279,6 +291,20 @@ function InviteBody({
               )}
             </section>
 
+            {voluntary && (
+              <label className="field rise" style={{ animationDelay: "120ms" }}>
+                <span className="field-label">How much would you like to give? (USDC)</span>
+                <input
+                  className="input"
+                  inputMode="decimal"
+                  placeholder={formatAmount(minimum)}
+                  value={amountText}
+                  onChange={(e) => setAmountText(e.target.value.replace(/[^\d.]/g, ""))}
+                />
+                {amountText && !amountOk && <span className="field-error">The smallest amount is {formatUsdc(minimum)}.</span>}
+              </label>
+            )}
+
             <div className={`${s.trust} rise`} style={{ animationDelay: "160ms" }}>
               <div className={s.trustRow}>
                 <span className={s.trustIcon}><Icon name="lock" /></span>
@@ -290,20 +316,24 @@ function InviteBody({
               </div>
               <div className={s.trustRow}>
                 <span className={s.trustIcon}><Icon name="refresh" /></span>
-                If the goal isn&apos;t met in time, {firstName} gives the pool more time or refunds everyone.
+                {p.resolution === "all_or_nothing"
+                  ? "If the goal isn't met by the deadline, everyone gets their money back."
+                  : p.resolution === "keep_raised"
+                    ? `Whatever is raised goes to ${firstName}${p.hasDeadline ? " at the deadline" : ""}${p.approverCount ? ", once the approvers agree" : ""}.`
+                    : `If the goal isn't met in time, ${firstName} gives the pool more time or refunds everyone.`}
               </div>
             </div>
 
             <div className={s.payFoot}>
-              <button className="btn btn-primary btn-block" disabled={!payer} onClick={() => setStep("method")}>
-                {payer ? `Pay ${formatUsdc(p.share)} as ${payerFirst}` : `Pay ${formatUsdc(p.share)}`}
+              <button className="btn btn-primary btn-block" disabled={!payer || !amountOk || amount <= 0} onClick={() => setStep("method")}>
+                {voluntary && amount <= 0 ? "Choose an amount" : payer ? `Pay ${formatUsdc(amount)} as ${payerFirst}` : `Pay ${formatUsdc(amount)}`}
               </button>
               <p className={s.payNote}>Pay with USDC, or by bank transfer soon</p>
             </div>
           </>
         )}
       </div>
-      {payer && <PayFlow invite={inv} payer={payer} step={step} setStep={setStep} />}
+      {payer && amountOk && amount > 0 && <PayFlow invite={inv} payer={payer} amount={amount} step={step} setStep={setStep} />}
     </InviteShell>
   );
 }

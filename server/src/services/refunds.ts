@@ -28,9 +28,11 @@ const POOLS_PER_RUN = 100;
 const REFUND_NOW_MS = 60_000;
 
 /**
- * Looks after pools whose deadline passed without reaching the goal. Nothing
- * is refunded by itself: the lifeguard is told once, then chooses to extend
- * the deadline or refund the divers. Once they choose to refund (the contract
+ * Looks after pools whose deadline passed without reaching the goal. A fixed
+ * pool isn't refunded by itself: the lifeguard is told once, then chooses to
+ * extend the deadline or refund the divers. An all-or-nothing voluntary pool, or
+ * one whose approvers missed their window, is refundable on the contract, and is
+ * refunded here as soon as its deadline has passed. Once they choose to refund (the contract
  * pool is cancelled), this refunds every contributor. The contract allows
  * anyone to send a refund and always pays it to the contributor, so no one
  * has to sign for it. Safe to run repeatedly and from several servers: each
@@ -92,8 +94,13 @@ export class RefundJob {
       await this.finish(poolId);
       return { asked: false, refunds: 0, failures: 0, finished: true };
     }
-    // The deadline passed below the goal: the lifeguard decides what happens.
+    // The deadline passed below the goal: the lifeguard decides what happens. A voluntary
+    // pool's rule decided already; one reported expired raised nothing, so there's nothing to do.
     if (state.status === "expired") {
+      if ((await this.contract.getSettings(chainPoolId)).kind === "voluntary") {
+        await this.finish(poolId);
+        return { asked: false, refunds: 0, failures: 0, finished: true };
+      }
       return { asked: await this.askLifeguard(poolId, state), refunds: 0, failures: 0, finished: false };
     }
     if (state.status === "open") {

@@ -89,6 +89,8 @@ export function appRoutes(
 
     // Pools
     app.get("/fee", async () => ({ bps: await pools.feeBps() }));
+    // What the create screen can offer: pool types, thresholds and windows need contract version 3.
+    app.get("/pool-options", async () => pools.options());
     app.get("/pools", async (request) => pools.list(await signedIn(request)));
     app.post("/pools", { bodyLimit: LARGE_BODY }, async (request, reply) => {
       const pool = await pools.create(await signedIn(request), parse(CreatePoolInput, request.body));
@@ -111,6 +113,8 @@ export function appRoutes(
       pools.extendDeadline(await signedIn(request), request.params.id, parse(ExtendDeadlineInput, request.body), appUrl(request)),
     );
     app.post<Params>("/pools/:id/refund", async (request) => pools.refundDivers(await signedIn(request), request.params.id));
+    // The approvers missed their window: the user takes back what they paid.
+    app.post<Params>("/pools/:id/reclaim", async (request) => pools.reclaim(await signedIn(request), request.params.id));
 
     // Payouts
     app.post<Params>("/pools/:id/payout", async (request) =>

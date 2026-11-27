@@ -16,7 +16,7 @@ import { useAction, useNow, useResource } from "@/lib/hooks";
 import { feeOf, formatAmount, formatUsdc, fromNaira, grossShare, roundUsdc } from "@/lib/money";
 import type { Entry } from "@/lib/people";
 import { sound } from "@/lib/sound";
-import type { PoolDetail, PoolType } from "@/lib/types";
+import type { PoolDetail, PoolKind, PoolResolution, PoolType } from "@/lib/types";
 import s from "./create.module.css";
 
 const STEPS = 8;
@@ -38,6 +38,13 @@ const TYPES: { emoji: string; type: PoolType; tip: string; ideas: string[] }[] =
 const EMOJIS = ["🎓", "🎂", "💼", "🤝", "✈️", "💍", "🕊️", "✨", "⚽", "🎉", "👕", "🍲", "📚", "💐"];
 const CHEERS = ["Great pick!", "Love it!", "Nice one!"];
 const MAKING = ["Setting up the pool", "Locking in your approvers", "Making your link"];
+/** How long approvers can take once a pool is payable, before divers can reclaim. */
+const WINDOWS: [string, number | null][] = [
+  ["No limit", null],
+  ["1 day", 24],
+  ["3 days", 72],
+  ["1 week", 168],
+];
 /** The "Filling your pool…" screen shows at least this long, so its steps can be read. */
 const MAKING_MS = 2100;
 const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
@@ -62,7 +69,18 @@ interface Draft {
   typeIndex: number;
   emoji: string;
   name: string;
+  /** fixed: everyone pays the same. voluntary: any amount from a minimum. */
+  kind: PoolKind;
+  /** The share (fixed) or the minimum (voluntary). */
   amountText: string;
+  /** Voluntary: an optional goal, and what happens to the money. */
+  goalText: string;
+  resolution: Exclude<PoolResolution, "admin_decides">;
+  /** Voluntary: no deadline at all. */
+  noDeadline: boolean;
+  /** Approvals needed (null: a majority) and the approvers' window in hours (null: no limit). */
+  threshold: number | null;
+  windowHours: number | null;
   feeCovered: boolean;
   count: number;
   deadline: Date | null;
@@ -139,7 +157,9 @@ function Made({ pool }: { pool: PoolDetail }) {
           <div style={{ minWidth: 0, flex: 1 }}>
             <div className="t-h3" style={{ fontWeight: 700 }}>{pool.name}</div>
             <div className="t-small muted">
-              {formatUsdc(pool.share)} each, goal {formatUsdc(pool.goal ?? 0)}
+              {pool.kind === "voluntary"
+                ? `From ${formatUsdc(pool.minimum ?? pool.share)}${pool.hasGoal ? `, goal ${formatUsdc(pool.goal ?? 0)}` : ""}`
+                : `${formatUsdc(pool.share)} each, goal ${formatUsdc(pool.goal ?? 0)}`}
             </div>
           </div>
         </div>
@@ -168,8 +188,10 @@ function Create() {
   const toast = useToast();
   const now = useNow();
   const contacts = useResource(() => api.listContacts(), []);
-  // The contract's fee, so the preview matches what the pool will charge.
-  const feeBps = useResource(() => api.getFeeBps(), []).data ?? 0;
+  // The contract's fee, so the preview matches what the pool will charge, and what it can hold.
+  const options = useResource(() => api.getPoolOptions(), []).data;
+  const feeBps = options?.feeBps ?? 0;
+  const withSettings = options?.poolSettings ?? false;
   const create = useAction(api.createPool);
   const [step, setStepNow] = useState(0);
   // Steps slide in from the side you're heading to.
@@ -188,7 +210,13 @@ function Create() {
     typeIndex: -1,
     emoji: "✨",
     name: "",
+    kind: "fixed",
     amountText: "",
+    goalText: "",
+    resolution: "keep_raised",
+    noDeadline: false,
+    threshold: null,
+    windowHours: null,
     feeCovered: false,
     count: 20,
     deadline: null,
@@ -203,9 +231,11 @@ function Create() {
   });
   const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }));
 
+  const voluntary = d.kind === "voluntary";
   const amount = roundUsdc(Number(d.amountText || 0));
-  const share = grossShare(amount, feeBps, d.feeCovered);
-  const goal = roundUsdc(share * d.count);
+  const share = voluntary ? amount : grossShare(amount, feeBps, d.feeCovered);
+  const voluntaryGoal = roundUsdc(Number(d.goalText || 0));
+  const goal = voluntary ? voluntaryGoal : roundUsdc(share * d.count);
   const receive = roundUsdc(goal - feeOf(goal, feeBps));
   const type = TYPES[Math.max(0, d.typeIndex)];
   const people = usable(d.members);
@@ -213,14 +243,17 @@ function Create() {
     () => (contacts.data ?? []).filter((c) => d.approverIds.includes(c.userId)).map((c) => c.name.split(" ")[0]),
     [contacts.data, d.approverIds],
   );
-  const needed = d.approverIds.length ? Math.floor(d.approverIds.length / 2) + 1 : 0;
+  const majority = d.approverIds.length ? Math.floor(d.approverIds.length / 2) + 1 : 0;
+  const needed = d.threshold !== null && d.threshold <= d.approverIds.length ? d.threshold : majority;
+  const deadlineText = d.noDeadline ? "No deadline" : d.deadline ? `${dayDate(d.deadline.toISOString())}, 11:59 pm` : "Not set";
+  const ruleText = d.resolution === "all_or_nothing" ? "All or nothing" : "Keep what's raised";
 
   const valid = [
     d.typeIndex >= 0,
     d.name.trim().length >= 3,
     amount >= MIN_AMOUNT,
-    d.count >= 2,
-    d.deadline !== null && d.deadline.getTime() > now + 60_000,
+    voluntary ? d.resolution === "keep_raised" || voluntaryGoal >= amount : d.count >= 2,
+    (voluntary && d.noDeadline) || (d.deadline !== null && d.deadline.getTime() > now + 60_000),
     true,
     true,
     true,
@@ -251,11 +284,17 @@ function Create() {
         type: type.type,
         emoji: d.emoji,
         name: d.name.trim(),
-        amount,
-        feeCoveredByDivers: d.feeCovered,
-        expectedCount: Math.max(d.count, people.length),
-        deadline: (d.deadline as Date).toISOString(),
+        kind: d.kind,
+        amount: voluntary ? null : amount,
+        feeCoveredByDivers: !voluntary && d.feeCovered,
+        expectedCount: voluntary ? Math.max(people.length, 1) : Math.max(d.count, people.length),
+        deadline: voluntary && d.noDeadline ? null : (d.deadline as Date).toISOString(),
+        minimum: voluntary ? amount : null,
+        goal: voluntary && voluntaryGoal > 0 ? voluntaryGoal : null,
+        resolution: voluntary ? d.resolution : null,
         approverIds: d.approverIds,
+        threshold: d.approverIds.length && d.threshold !== null && d.threshold <= d.approverIds.length ? d.threshold : null,
+        approvalWindowHours: d.approverIds.length ? d.windowHours : null,
         members: people.map(({ name, contact }) => ({ name, contact })),
         pickYourName: d.pickYourName,
         allowNotOnList: d.allowNotOnList,
@@ -360,7 +399,13 @@ function Create() {
     </>,
     // 3. Amount
     <>
-      <h1 className={`${s.title} ${s.amountTitle}`}>How much should each diver pay?</h1>
+      {withSettings && (
+        <div className={s.options} style={{ marginBottom: 18 }}>
+          <Option icon="🟰" title="Everyone pays the same" sub="A set share each, like dues" on={!voluntary} onClick={() => set({ kind: "fixed" })} />
+          <Option icon="🎁" title="Any amount from a minimum" sub="People give what they like, like a gift" on={voluntary} onClick={() => set({ kind: "voluntary", feeCovered: false })} />
+        </div>
+      )}
+      <h1 className={`${s.title} ${s.amountTitle}`}>{voluntary ? "What's the smallest amount someone can give?" : "How much should each diver pay?"}</h1>
       <div ref={amountBox} className={s.amount} style={{ marginTop: 22 }}>
         {/* Each key press bumps the number; the caret blinks after it. */}
         <span key={d.amountText} className={`${s.amountValue} bump`}>
@@ -376,8 +421,8 @@ function Create() {
           </button>
         ))}
       </div>
-      {/* No fee to cover on a contract without one. */}
-      {feeBps > 0 && (
+      {/* No fee to cover on a contract without one, or on amounts people choose themselves. */}
+      {feeBps > 0 && !voluntary && (
         <FeeTip feeBps={feeBps} on={d.feeCovered} onChange={(on) => set({ feeCovered: on })}>
           {amount
             ? d.feeCovered
@@ -395,7 +440,42 @@ function Create() {
       </div>
       {d.amountText && amount < MIN_AMOUNT && <p className="field-error" style={{ textAlign: "center", marginTop: 10 }}>The smallest amount is {formatUsdc(MIN_AMOUNT)}.</p>}
     </>,
-    // 4. How many
+    // 4. How many (fixed), or the goal and what happens to the money (voluntary)
+    voluntary ? (
+      <>
+        <h1 className={s.title}>Set a goal and a rule</h1>
+        <p className={s.lead}>A goal is optional. The rule decides what happens to the money, and can&apos;t change once someone has paid.</p>
+        <label className="field">
+          <span className="field-label">Goal (optional)</span>
+          <input
+            className="input"
+            inputMode="decimal"
+            placeholder="No goal"
+            value={d.goalText}
+            onChange={(e) => set({ goalText: e.target.value.replace(/[^\d.]/g, "") })}
+          />
+        </label>
+        <div className={s.options} style={{ marginTop: 16 }}>
+          <Option
+            icon="🎯"
+            title="All or nothing"
+            sub="If the goal isn't met by the deadline, everyone gets their money back"
+            on={d.resolution === "all_or_nothing"}
+            onClick={() => set({ resolution: "all_or_nothing", noDeadline: false })}
+          />
+          <Option
+            icon="🪣"
+            title="Keep what's raised"
+            sub="Whatever is raised is paid out at the deadline, goal or not"
+            on={d.resolution === "keep_raised"}
+            onClick={() => set({ resolution: "keep_raised" })}
+          />
+        </div>
+        {d.resolution === "all_or_nothing" && voluntaryGoal < amount && (
+          <p className="field-error" style={{ marginTop: 10 }}>All or nothing needs a goal of at least {formatUsdc(amount)}.</p>
+        )}
+      </>
+    ) : (
     <>
       <h1 className={s.title}>How many divers are you expecting?</h1>
       <p className={s.lead}>A rough number is fine. There&apos;s no limit.</p>
@@ -426,15 +506,19 @@ function Create() {
           <CountUp value={goal} duration={300} from={goal} format={(v) => formatUsdc(roundUsdc(v))} />
         </b>
       </div>
-    </>,
+    </>
+    ),
     // 5. Deadline
     <>
       <h1 className={s.title}>When should it close?</h1>
       <p className={s.lead}>Divers get reminders before this date.</p>
       <div className={s.options}>
         {deadlineOptions.map(([emoji, title, date], i) => (
-          <Option key={title} icon={emoji} title={title} sub={`${dayDate(date.toISOString())}, 11:59 pm`} on={d.deadlineChoice === i} onClick={() => set({ deadlineChoice: i, deadline: date })} />
+          <Option key={title} icon={emoji} title={title} sub={`${dayDate(date.toISOString())}, 11:59 pm`} on={d.deadlineChoice === i} onClick={() => set({ deadlineChoice: i, deadline: date, noDeadline: false })} />
         ))}
+        {voluntary && d.resolution === "keep_raised" && (
+          <Option icon="♾️" title="No deadline" sub="Paid out whenever you ask" on={d.noDeadline} onClick={() => set({ noDeadline: true, deadlineChoice: -1, deadline: null })} />
+        )}
         <label className={`${s.option} ${d.deadlineChoice === 3 ? s.optionOn : ""}`} style={{ cursor: "pointer" }}>
           <span className={s.optionIcon}>✏️</span>
           <span className={s.optionText}>
@@ -442,7 +526,7 @@ function Create() {
             <input
               type="date"
               min={new Date(now + 86_400_000).toISOString().slice(0, 10)}
-              onChange={(e) => e.target.value && set({ deadlineChoice: 3, deadline: endOfDay(new Date(`${e.target.value}T12:00:00`)) })}
+              onChange={(e) => e.target.value && set({ deadlineChoice: 3, deadline: endOfDay(new Date(`${e.target.value}T12:00:00`)), noDeadline: false })}
               style={{ border: 0, padding: 0, font: "inherit", color: "var(--slate)", fontSize: 13, background: "transparent" }}
             />
           </span>
@@ -451,7 +535,11 @@ function Create() {
       </div>
       <p className="note" style={{ marginTop: 16 }}>
         <Icon name="refresh" />
-        If the goal isn&apos;t met by the deadline, you choose: give the pool more time, or refund everyone who paid.
+        {!voluntary
+          ? "If the goal isn't met by the deadline, you choose: give the pool more time, or refund everyone who paid."
+          : d.resolution === "all_or_nothing"
+            ? "If the goal isn't met by the deadline, everyone who paid gets their money back."
+            : "At the deadline, whatever was raised is paid out to you."}
       </p>
     </>,
     // 6. Approvers
@@ -493,6 +581,31 @@ function Create() {
         {contacts.loading && <p className="muted t-small">Loading your contacts…</p>}
         <ErrorText error={contacts.error} />
       </div>
+      {withSettings && d.approverIds.length > 0 && (
+        <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
+          <span className="field-label">Approvals needed</span>
+          <div className={s.ideas}>
+            {Array.from({ length: d.approverIds.length }, (_, i) => i + 1).map((n) => (
+              <button key={n} type="button" className="chip" aria-pressed={needed === n} onClick={() => set({ threshold: n })}>
+                {n} of {d.approverIds.length}
+              </button>
+            ))}
+          </div>
+          <span className="field-label">Time to approve</span>
+          <div className={s.ideas}>
+            {WINDOWS.map(([title, hours]) => (
+              <button key={title} type="button" className="chip" aria-pressed={d.windowHours === hours} onClick={() => set({ windowHours: hours })}>
+                {title}
+              </button>
+            ))}
+          </div>
+          <p className="t-caption muted">
+            {d.windowHours === null
+              ? "Approvers have no time limit."
+              : "Counted from when the pool can pay out. If not enough approve in time, everyone who paid can take their money back."}
+          </p>
+        </div>
+      )}
       {d.approverIds.length === MAX_APPROVERS && (
         <div className={`${s.tip} say-in`}>
           <Drip size={44} mood="cheer" pop />
@@ -552,12 +665,23 @@ function Create() {
         <dl style={{ margin: 0 }}>
           {(
             [
-              ["Each diver pays", `${formatUsdc(share)}${d.feeCovered ? " (fee included)" : ""}`, 2],
-              ["Divers", String(Math.max(d.count, people.length)), 3],
-              ["Goal", formatUsdc(goal), 3],
-              ["You receive", formatUsdc(receive), 2],
-              ["Closes", d.deadline ? `${dayDate(d.deadline.toISOString())}, 11:59 pm` : "Not set", 4],
-              ["Approvers", approverNames.join(", ") || "None", 5],
+              ...((voluntary
+                ? [
+                    ["Smallest payment", formatUsdc(amount), 2],
+                    ["Goal", voluntaryGoal > 0 ? formatUsdc(voluntaryGoal) : "No goal", 3],
+                    ["Rule", ruleText, 3],
+                  ]
+                : [
+                    ["Each diver pays", `${formatUsdc(share)}${d.feeCovered ? " (fee included)" : ""}`, 2],
+                    ["Divers", String(Math.max(d.count, people.length)), 3],
+                    ["Goal", formatUsdc(goal), 3],
+                    ["You receive", formatUsdc(receive), 2],
+                  ]) as [string, string, number][]),
+              ["Closes", deadlineText, 4],
+              ["Approvers", approverNames.length ? `${approverNames.join(", ")} (${needed} must approve)` : "None", 5],
+              ...((approverNames.length && d.windowHours !== null
+                ? [["Time to approve", WINDOWS.find(([, h]) => h === d.windowHours)?.[0] ?? "", 5]]
+                : []) as [string, string, number][]),
               ["Member list", people.length ? `${people.length} people` : "None, just the link", 6],
             ] as [string, string, number][]
           ).map(([label, value, target], i) => (
@@ -617,10 +741,18 @@ function Create() {
             </div>
             {(
               [
-                ["Each diver pays", amount ? `${formatUsdc(share)}${d.feeCovered ? " (fee included)" : ""}` : "Not set"],
-                ["Divers", String(Math.max(d.count, people.length))],
-                ["Goal", amount ? formatUsdc(goal) : "Not set"],
-                ["You receive", amount ? formatUsdc(receive) : "Not set"],
+                ...((voluntary
+                  ? [
+                      ["Smallest payment", amount ? formatUsdc(amount) : "Not set"],
+                      ["Goal", voluntaryGoal > 0 ? formatUsdc(voluntaryGoal) : "No goal"],
+                      ["Rule", ruleText],
+                    ]
+                  : [
+                      ["Each diver pays", amount ? `${formatUsdc(share)}${d.feeCovered ? " (fee included)" : ""}` : "Not set"],
+                      ["Divers", String(Math.max(d.count, people.length))],
+                      ["Goal", amount ? formatUsdc(goal) : "Not set"],
+                      ["You receive", amount ? formatUsdc(receive) : "Not set"],
+                    ]) as [string, string][]),
                 ["Approvers", approverNames.join(", ") || "Not picked"],
               ] as [string, string][]
             ).map(([k, v]) => (

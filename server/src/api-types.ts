@@ -39,6 +39,16 @@ export type PoolType =
   | "Faith group"
   | "Something else";
 
+/** fixed: everyone pays a set share. voluntary: any amount from a minimum. */
+export type PoolKind = "fixed" | "voluntary";
+/**
+ * What happens to a pool's money if it doesn't simply reach its goal. Fixed pools:
+ * admin_decides (the lifeguard extends or refunds at a missed deadline). Voluntary:
+ * all_or_nothing (everyone is refunded below the goal at the deadline) or
+ * keep_raised (whatever was raised is paid out at the deadline, any time without one).
+ */
+export type PoolResolution = "admin_decides" | "all_or_nothing" | "keep_raised";
+
 export interface PoolSummary {
   id: string;
   code: string;
@@ -47,8 +57,16 @@ export interface PoolSummary {
   type: PoolType;
   role: Role;
   status: PoolStatus;
-  /** What each diver pays, including the fee share when divers cover the fee. */
+  kind: PoolKind;
+  resolution: PoolResolution;
+  /** What each diver pays, including the fee share when divers cover the fee. Voluntary pools: the minimum. */
   share: Usdc;
+  /** Voluntary pools: the smallest payment. Null for fixed pools. */
+  minimum: Usdc | null;
+  /** False for a voluntary pool without a goal (its progress is 0). */
+  hasGoal: boolean;
+  /** False for a voluntary pool without a deadline: `deadline` is then 9999-12-31. */
+  hasDeadline: boolean;
   expectedCount: number;
   /** How full the pool is, 0 to 100. Everyone in the pool sees this. */
   progress: number;
@@ -74,6 +92,11 @@ export interface Diver {
   onList: boolean;
   userId: string | null;
   receiptRef: string | null;
+  /**
+   * Read from the contract, once they have a wallet in the pool: what they owe
+   * (fixed pools made with shares on-chain) and what they've paid. Null otherwise.
+   */
+  onChain: { expected: Usdc | null; contributed: Usdc; paid: boolean; refunded: boolean } | null;
 }
 
 export interface Approver {
@@ -115,7 +138,18 @@ export interface PoolDetail extends PoolSummary {
   feeBps: number;
   feeCoveredByDivers: boolean;
   approvers: Approver[];
+  /** Approvals the payout needs: the threshold, or a majority when there is none. */
   approvalsNeeded: number;
+  /** The threshold the lifeguard set; null: a majority. */
+  threshold: number | null;
+  /** How long the approvers have once the pool is payable; null: no limit. */
+  approvalWindowHours: number | null;
+  /** When the approvers' window runs out, once the pool is payable. */
+  approvalDeadline: string | null;
+  /** The window ran out before enough approvals: everyone who paid can reclaim. */
+  approvalWindowExpired: boolean;
+  /** The signed-in user can take their payment back now (the window ran out). */
+  canReclaim: boolean;
   payout: Payout | null;
   divers: Diver[];
   pickYourName: boolean;
@@ -218,6 +252,12 @@ export interface Receipt {
 }
 
 /** What anyone with the invite link sees. */
+/** What the create screen can offer: pool types, thresholds and windows need contract version 3. */
+export interface PoolOptions {
+  feeBps: number;
+  poolSettings: boolean;
+}
+
 export interface InviteView {
   pool: {
     id: string;
@@ -227,6 +267,12 @@ export interface InviteView {
     share: Usdc;
     deadline: string;
     status: PoolStatus;
+    kind: PoolKind;
+    resolution: PoolResolution;
+    /** Voluntary pools: the smallest payment. */
+    minimum: Usdc | null;
+    hasGoal: boolean;
+    hasDeadline: boolean;
     paidCount: number;
     expectedCount: number;
     /** How full the pool is, 0 to 100. The money totals are only for the lifeguard. */
@@ -268,12 +314,22 @@ export interface CreatePoolInput {
   type: PoolType;
   emoji: string;
   name: string;
-  /** What the lifeguard receives per person, before any fee share. */
-  amount: Usdc;
+  kind: PoolKind;
+  /** Fixed pools: what the lifeguard receives per person, before any fee share. */
+  amount: Usdc | null;
   feeCoveredByDivers: boolean;
   expectedCount: number;
-  deadline: string;
+  /** Required for fixed pools; null for a voluntary pool without a deadline. */
+  deadline: string | null;
+  /** Voluntary pools: the smallest payment, an optional goal, and what happens to the money. */
+  minimum: Usdc | null;
+  goal: Usdc | null;
+  resolution: Exclude<PoolResolution, "admin_decides"> | null;
   approverIds: string[];
+  /** Approvals the payout needs, 1 to the number of approvers; null: a majority. */
+  threshold: number | null;
+  /** Hours the approvers have once the pool is payable, before divers can reclaim; null: no limit. */
+  approvalWindowHours: number | null;
   members: NewDiver[];
   pickYourName: boolean;
   allowNotOnList: boolean;

@@ -319,6 +319,12 @@
                   },
                   {
                     "key": {
+                      "symbol": "expected"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
                       "symbol": "index"
                     },
                     "val": {
@@ -332,6 +338,12 @@
                     "val": {
                       "u64": "1780000000"
                     }
+                  },
+                  {
+                    "key": {
+                      "symbol": "paid"
+                    },
+                    "val": "void"
                   },
                   {
                     "key": {
@@ -382,6 +394,12 @@
                   },
                   {
                     "key": {
+                      "symbol": "expected"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
                       "symbol": "index"
                     },
                     "val": {
@@ -395,6 +413,12 @@
                     "val": {
                       "u64": "1780000000"
                     }
+                  },
+                  {
+                    "key": {
+                      "symbol": "paid"
+                    },
+                    "val": "void"
                   },
                   {
                     "key": {
